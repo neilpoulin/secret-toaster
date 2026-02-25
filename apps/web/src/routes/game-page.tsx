@@ -62,6 +62,7 @@ interface CommandReplayEntry {
   executionIndex: number;
   playerUserId: string;
   commandType: string;
+  commandPayload: Record<string, unknown>;
   createdAt: string;
 }
 
@@ -78,6 +79,16 @@ function asText(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function formatPayloadInline(payload: Record<string, unknown>): string {
+  const raw = JSON.stringify(payload);
+  if (raw.length <= 120) return raw;
+  return `${raw.slice(0, 117)}...`;
+}
+
 function getCommandReplayEntries(events: GameEventRecord[]): CommandReplayEntry[] {
   return events
     .filter((event) => event.event_type === "command.executed")
@@ -87,6 +98,7 @@ function getCommandReplayEntries(events: GameEventRecord[]): CommandReplayEntry[
       const sourceEventId = asNumber(event.payload.sourceEventId);
       const playerUserId = asText(event.payload.playerUserId);
       const commandType = asText(event.payload.commandType);
+      const commandPayload = asRecord(event.payload.payload) ?? {};
 
       if (
         round === null ||
@@ -104,6 +116,7 @@ function getCommandReplayEntries(events: GameEventRecord[]): CommandReplayEntry[
         executionIndex,
         playerUserId,
         commandType,
+        commandPayload,
         createdAt: event.created_at,
       };
     })
@@ -388,10 +401,8 @@ export function GamePage() {
     : "";
 
   const commandReplayEntries = getCommandReplayEntries(gameEvents);
-  const latestExecutedRound = commandReplayEntries.reduce<number | null>(
-    (current, entry) => (current === null || entry.round > current ? entry.round : current),
-    null,
-  );
+  const replayRounds = [...new Set(commandReplayEntries.map((entry) => entry.round))].sort((left, right) => right - left);
+  const latestExecutedRound = replayRounds[0] ?? null;
   const latestRoundReplay =
     latestExecutedRound === null
       ? []
@@ -620,6 +631,9 @@ export function GamePage() {
               <p>
                 Latest executed round: <strong>{latestExecutedRound}</strong>
               </p>
+              <p>
+                Recent executed rounds: <strong>{replayRounds.join(", ")}</strong>
+              </p>
               {latestRoundReplay.length === 0 ? (
                 <p>No command execution entries found for this round.</p>
               ) : (
@@ -627,7 +641,8 @@ export function GamePage() {
                   {latestRoundReplay.map((entry) => (
                     <li key={entry.sourceEventId}>
                       #{entry.executionIndex + 1} - {entry.commandType} by {shortId(entry.playerUserId)} at{" "}
-                      {new Date(entry.createdAt).toLocaleTimeString()}
+                      {new Date(entry.createdAt).toLocaleTimeString()} (source event #{entry.sourceEventId}) - payload:{" "}
+                      <code>{formatPayloadInline(entry.commandPayload)}</code>
                     </li>
                   ))}
                 </ol>

@@ -12,12 +12,12 @@
         "css.validate": false,
         "scss.validate": false,
         "less.validate": false,
-        "css.lint.unknownAtRules": "ignore",
+        "css.lint.unknownAtRules": false,
         "scss.lint.unknownAtRules": "ignore",
         "less.lint.unknownAtRules": "ignore",
         "css": {
           "lint": {
-            "unknownAtRules": "ignore"
+            "unknownAtRules": false
           }
         }
       }
