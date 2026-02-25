@@ -75,8 +75,9 @@ interface CommandReplayEntry {
 type BoardInteractionMode = "inspect" | "plan";
 
 function shortId(value: string): string {
-  if (value.length <= 12) return value;
-  return `${value.slice(0, 6)}...${value.slice(-4)}`;
+  const maxLength = 12;
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength)}...`;
 }
 
 function asNumber(value: unknown): number | null {
