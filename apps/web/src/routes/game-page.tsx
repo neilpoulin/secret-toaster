@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { validateCommandPayload } from "@secret-toaster/contracts";
 import { legacyBoardX, legacyBoardY } from "@secret-toaster/domain";
 
@@ -33,6 +33,7 @@ interface GameEventRecord {
   id: number;
   event_type: string;
   payload: Record<string, unknown>;
+  caused_by?: string | null;
   created_at: string;
 }
 
@@ -74,6 +75,12 @@ interface CommandReplayEntry {
 
 type BoardInteractionMode = "inspect" | "plan";
 
+type PlannedOrder = {
+  orderNumber: number;
+  fromHexId: number;
+  toHexId: number;
+};
+
 function shortId(value: string): string {
   const maxLength = 12;
   if (value.length <= maxLength) return value;
@@ -96,6 +103,22 @@ function formatPayloadInline(payload: Record<string, unknown>): string {
   const raw = JSON.stringify(payload);
   if (raw.length <= 120) return raw;
   return `${raw.slice(0, 117)}...`;
+}
+
+function parsePlannedOrder(payload: Record<string, unknown>): PlannedOrder | null {
+  const orderNumber = asNumber(payload.orderNumber);
+  const fromHexId = asNumber(payload.fromHexId);
+  const toHexId = asNumber(payload.toHexId);
+
+  if (orderNumber === null || fromHexId === null || toHexId === null) return null;
+  if (!Number.isInteger(orderNumber) || !Number.isInteger(fromHexId) || !Number.isInteger(toHexId)) return null;
+  if (orderNumber < 1 || orderNumber > 3) return null;
+
+  return {
+    orderNumber,
+    fromHexId,
+    toHexId,
+  };
 }
 
 function getCommandReplayEntries(events: GameEventRecord[]): CommandReplayEntry[] {
@@ -159,6 +182,7 @@ export function GamePage() {
   const [plannedFromHexId, setPlannedFromHexId] = useState<number | null>(null);
   const [plannedToHexId, setPlannedToHexId] = useState<number | null>(null);
   const [boardInteractionMode, setBoardInteractionMode] = useState<BoardInteractionMode>("inspect");
+  const [activeOrderNumber, setActiveOrderNumber] = useState(1);
 
   const authQuery = useQuery({
     queryKey: ["auth", "user"],
@@ -328,7 +352,7 @@ export function GamePage() {
       const { data: events, error: eventsError } = await supabase
         .schema("secret_toaster")
         .from("game_events")
-        .select("id, event_type, payload, created_at")
+        .select("id, event_type, payload, caused_by, created_at")
         .eq("game_id", activeGame.gameId)
         .order("created_at", { ascending: false })
         .limit(20);
@@ -429,20 +453,56 @@ export function GamePage() {
           .sort((left, right) => left.executionIndex - right.executionIndex);
   const currentState = gameDetailsQuery.data?.game.current_state ?? {};
   const currentUserId = authQuery.data?.id ?? null;
+  const currentRound = gameDetailsQuery.data?.game.round ?? 0;
+
+  const issuedOrdersByNumber = useMemo(() => {
+    const orders = new Map<number, PlannedOrder>();
+    if (!currentUserId) return orders;
+
+    const relevantEvents = [...gameEvents]
+      .filter((event) => event.event_type === "command.received")
+      .sort((left, right) => left.id - right.id);
+
+    for (const event of relevantEvents) {
+      const eventRound = asNumber(event.payload.round);
+      const eventPlayer = event.caused_by ?? null;
+      const eventCommandType = asText(event.payload.commandType);
+      const nestedPayload = asRecord(event.payload.payload);
+      const order = nestedPayload ? parsePlannedOrder(nestedPayload) : null;
+
+      if (eventRound !== currentRound) continue;
+      if (eventPlayer !== currentUserId) continue;
+      if (eventCommandType !== "order.submit") continue;
+      if (!order) continue;
+
+      orders.set(order.orderNumber, order);
+      for (let next = order.orderNumber + 1; next <= 3; next += 1) {
+        orders.delete(next);
+      }
+    }
+
+    return orders;
+  }, [currentRound, currentUserId, gameEvents]);
+
   const selectedHex = LEGACY_BOARD.hexes[selectedHexId] ?? null;
   const selectedHexSnapshot = selectedHex ? getHexSnapshot(currentState, selectedHex.index) : null;
   const selectedHexNeighbors =
     selectedHex?.neighbors.filter((neighbor): neighbor is number => neighbor !== null) ?? [];
 
-  const legalStartHexIds = LEGACY_BOARD.hexes
-    .filter((hex) => hex.type !== "BLANK")
-    .map((hex) => {
-      const snapshot = getHexSnapshot(currentState, hex.index);
-      const ownedByCurrentUser = Boolean(currentUserId && snapshot?.ownerUserId === currentUserId);
-      const hasUnits = (snapshot?.troopCount ?? 0) > 0 || (snapshot?.knightCount ?? 0) > 0;
-      return ownedByCurrentUser && hasUnits ? hex.index : null;
-    })
-    .filter((hexId): hexId is number => hexId !== null);
+  const projectedStartFromPreviousOrder = activeOrderNumber > 1 ? (issuedOrdersByNumber.get(activeOrderNumber - 1)?.toHexId ?? null) : null;
+
+  const legalStartHexIds =
+    projectedStartFromPreviousOrder !== null
+      ? [projectedStartFromPreviousOrder]
+      : LEGACY_BOARD.hexes
+          .filter((hex) => hex.type !== "BLANK")
+          .map((hex) => {
+            const snapshot = getHexSnapshot(currentState, hex.index);
+            const ownedByCurrentUser = Boolean(currentUserId && snapshot?.ownerUserId === currentUserId);
+            const hasUnits = (snapshot?.troopCount ?? 0) > 0 || (snapshot?.knightCount ?? 0) > 0;
+            return ownedByCurrentUser && hasUnits ? hex.index : null;
+          })
+          .filter((hexId): hexId is number => hexId !== null);
 
   const legalStartHexIdSet = new Set<number>(legalStartHexIds);
   const legalDestinationHexIds =
@@ -478,9 +538,7 @@ export function GamePage() {
       nextPayload.toHexId = toHexId;
     }
 
-    if (typeof nextPayload.orderNumber !== "number") {
-      nextPayload.orderNumber = 1;
-    }
+    nextPayload.orderNumber = activeOrderNumber;
 
     setCommandPayloadText(JSON.stringify(nextPayload, null, 2));
   };
@@ -514,6 +572,27 @@ export function GamePage() {
     setPlannedToHexId(null);
     updateCommandPayloadOrderFields(null, null);
   };
+
+  useEffect(() => {
+    const issued = issuedOrdersByNumber.get(activeOrderNumber);
+    if (issued) {
+      setPlannedFromHexId(issued.fromHexId);
+      setPlannedToHexId(issued.toHexId);
+      updateCommandPayloadOrderFields(issued.fromHexId, issued.toHexId);
+      return;
+    }
+
+    if (projectedStartFromPreviousOrder !== null) {
+      setPlannedFromHexId(projectedStartFromPreviousOrder);
+      setPlannedToHexId(null);
+      updateCommandPayloadOrderFields(projectedStartFromPreviousOrder, null);
+      return;
+    }
+
+    setPlannedFromHexId(null);
+    setPlannedToHexId(null);
+    updateCommandPayloadOrderFields(null, null);
+  }, [activeOrderNumber, issuedOrdersByNumber, projectedStartFromPreviousOrder]);
 
   const handleBoardHexSelect = (hexId: number) => {
     setSelectedHexId(hexId);
@@ -690,6 +769,26 @@ export function GamePage() {
             </span>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Order slot:</span>
+            {[1, 2, 3].map((slot) => (
+              <Button
+                key={slot}
+                type="button"
+                size="xs"
+                variant={activeOrderNumber === slot ? "default" : "outline"}
+                onClick={() => setActiveOrderNumber(slot)}
+              >
+                {slot}
+              </Button>
+            ))}
+            <span className="text-xs text-muted-foreground">
+              {activeOrderNumber > 1 && projectedStartFromPreviousOrder !== null
+                ? `Projected start from order ${activeOrderNumber - 1}: #${projectedStartFromPreviousOrder}`
+                : "Order 1 starts from your currently owned hexes with units"}
+            </span>
+          </div>
+
           <GameBoardCanvas
             currentState={currentState}
             selectedHexId={selectedHexId}
@@ -742,7 +841,7 @@ export function GamePage() {
                 </Button>
               </div>
               <p className="mt-2 text-muted-foreground">
-                Planned order: from {plannedFromHexId ?? "-"} to {plannedToHexId ?? "-"}
+                Planned order {activeOrderNumber}: from {plannedFromHexId ?? "-"} to {plannedToHexId ?? "-"}
               </p>
             </div>
           ) : null}

@@ -14,7 +14,7 @@ export const ApplyCommandSchema = z.object({
 
 export const OrderSubmitPayloadSchema = z
   .object({
-    orderNumber: z.number().int().min(1),
+    orderNumber: z.number().int().min(1).max(3),
     fromHexId: z.number().int().min(0).max(LEGACY_HEX_ID_MAX),
     toHexId: z.number().int().min(0).max(LEGACY_HEX_ID_MAX),
   })
