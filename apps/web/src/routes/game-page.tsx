@@ -97,6 +97,7 @@ export function GamePage() {
   const gameDetailsQuery = useQuery({
     queryKey: ["game", "details", activeGame.gameId],
     enabled: Boolean(activeGame.gameId && authQuery.data),
+    refetchInterval: authQuery.data ? 5000 : false,
     queryFn: async (): Promise<{
       game: GameDetailsRecord;
       memberships: GameMembershipRecord[];
@@ -230,7 +231,7 @@ export function GamePage() {
   }, [activeGameCode, activeGameSource, gameId]);
 
   useEffect(() => {
-    if (!activeGame.gameId) return;
+    if (!activeGame.gameId || !authQuery.data) return;
 
     void (async () => {
       const { data, error } = await supabase
@@ -321,7 +322,7 @@ export function GamePage() {
       void supabase.removeChannel(eventChannel);
       void supabase.removeChannel(lobbyChannel);
     };
-  }, [activeGame.gameId, queryClient]);
+  }, [activeGame.gameId, authQuery.data, queryClient]);
 
   const currentUserReadiness = gameDetailsQuery.data?.readiness.find(
     (entry) => entry.user_id === authQuery.data?.id,
