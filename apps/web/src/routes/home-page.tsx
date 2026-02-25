@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "../lib/supabase";
 
 interface CreateGameResponse {
@@ -24,6 +25,13 @@ interface CreateInviteResponse {
   gameId: string;
   inviteToken: string;
   expiresAt: string;
+}
+
+interface ApplyCommandResponse {
+  ok: boolean;
+  accepted: boolean;
+  eventId: number;
+  createdAt: string;
 }
 
 interface ActiveGame {
@@ -105,6 +113,9 @@ export function HomePage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [generatedInvite, setGeneratedInvite] = useState<CreateInviteResponse | null>(null);
   const [activeGame, setActiveGame] = useState<ActiveGame | null>(() => getInitialActiveGame());
+  const [commandType, setCommandType] = useState("order.submit");
+  const [commandPayloadText, setCommandPayloadText] = useState('{"orderNumber":1}');
+  const [lastCommandAck, setLastCommandAck] = useState<ApplyCommandResponse | null>(null);
   const [gameEvents, setGameEvents] = useState<GameEventRecord[]>([]);
   const [gameEventsError, setGameEventsError] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -337,6 +348,42 @@ export function HomePage() {
     onSuccess: (payload) => {
       setGeneratedInvite(payload);
       setInviteToken(payload.inviteToken);
+    },
+  });
+
+  const applyCommandMutation = useMutation({
+    mutationFn: async (): Promise<ApplyCommandResponse> => {
+      if (!activeGame?.gameId) throw new Error("Create or join a game first");
+
+      let payload: Record<string, unknown>;
+      try {
+        payload = JSON.parse(commandPayloadText) as Record<string, unknown>;
+      } catch {
+        throw new Error("Command payload must be valid JSON");
+      }
+
+      const trimmedCommandType = commandType.trim();
+      if (!trimmedCommandType) throw new Error("Command type is required");
+
+      const { data, error } = await supabase.functions.invoke("secret-toaster-apply-command", {
+        body: {
+          gameId: activeGame.gameId,
+          commandType: trimmedCommandType,
+          payload,
+        },
+      });
+
+      if (error) throw error;
+
+      const response = data as ApplyCommandResponse | null;
+      if (!response || !response.ok || !response.accepted) {
+        throw new Error("Command was not accepted");
+      }
+
+      return response;
+    },
+    onSuccess: (response) => {
+      setLastCommandAck(response);
     },
   });
 
@@ -680,6 +727,45 @@ export function HomePage() {
                     Copy invite link
                   </Button>
                 </>
+              ) : null}
+            </div>
+          ) : null}
+
+          {activeGame ? (
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold">Command Submit</h2>
+              <form
+                className="space-y-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  applyCommandMutation.mutate();
+                }}
+              >
+                <Label htmlFor="command-type">Command type</Label>
+                <Input
+                  id="command-type"
+                  type="text"
+                  value={commandType}
+                  onChange={(event) => setCommandType(event.target.value)}
+                  placeholder="order.submit"
+                />
+                <Label htmlFor="command-payload">Payload (JSON)</Label>
+                <Textarea
+                  id="command-payload"
+                  value={commandPayloadText}
+                  onChange={(event) => setCommandPayloadText(event.target.value)}
+                  rows={4}
+                />
+                <Button type="submit" disabled={applyCommandMutation.isPending}>
+                  {applyCommandMutation.isPending ? "Submitting..." : "Submit command"}
+                </Button>
+              </form>
+              {applyCommandMutation.isError ? <p>Command error: {applyCommandMutation.error.message}</p> : null}
+              {lastCommandAck ? (
+                <p>
+                  Last command accepted at {new Date(lastCommandAck.createdAt).toLocaleTimeString()} (event #
+                  {lastCommandAck.eventId})
+                </p>
               ) : null}
             </div>
           ) : null}
