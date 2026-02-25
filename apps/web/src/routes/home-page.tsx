@@ -2,8 +2,26 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 
+interface CreateGameResponse {
+  ok: boolean;
+  gameId: string;
+  gameCode: string;
+  title: string | null;
+}
+
+interface GameEventRecord {
+  id: number;
+  event_type: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
 export function HomePage() {
   const [email, setEmail] = useState("");
+  const [gameTitle, setGameTitle] = useState("");
+  const [gamePassword, setGamePassword] = useState("");
+  const [createdGame, setCreatedGame] = useState<CreateGameResponse | null>(null);
+  const [gameEvents, setGameEvents] = useState<GameEventRecord[]>([]);
   const queryClient = useQueryClient();
 
   const authQuery = useQuery({
@@ -38,6 +56,28 @@ export function HomePage() {
     },
   });
 
+  const createGameMutation = useMutation({
+    mutationFn: async (): Promise<CreateGameResponse> => {
+      const { data, error } = await supabase.functions.invoke("secret-toaster-create-game", {
+        body: {
+          title: gameTitle.trim() || undefined,
+          password: gamePassword.trim() || undefined,
+        },
+      });
+
+      if (error) throw error;
+
+      const payload = data as CreateGameResponse | null;
+      if (!payload || !payload.ok) throw new Error("Create game failed");
+      return payload;
+    },
+    onSuccess: (payload) => {
+      setCreatedGame(payload);
+      setGameEvents([]);
+      setGamePassword("");
+    },
+  });
+
   useEffect(() => {
     const {
       data: { subscription },
@@ -49,6 +89,31 @@ export function HomePage() {
       subscription.unsubscribe();
     };
   }, [queryClient]);
+
+  useEffect(() => {
+    if (!createdGame?.gameId) return;
+
+    const channel = supabase
+      .channel(`game-events-${createdGame.gameId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "secret_toaster",
+          table: "game_events",
+          filter: `game_id=eq.${createdGame.gameId}`,
+        },
+        (payload) => {
+          const next = payload.new as GameEventRecord;
+          setGameEvents((previous) => [next, ...previous].slice(0, 20));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [createdGame?.gameId]);
 
   const handleSignIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -100,6 +165,66 @@ export function HomePage() {
         {signInMutation.isError ? <p>Sign-in error: {signInMutation.error.message}</p> : null}
         {signOutMutation.isError ? <p>Sign-out error: {signOutMutation.error.message}</p> : null}
       </section>
+
+      {authQuery.data ? (
+        <section>
+          <h2>Create Game</h2>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              createGameMutation.mutate();
+            }}
+          >
+            <label htmlFor="game-title">Title</label>
+            <br />
+            <input
+              id="game-title"
+              type="text"
+              value={gameTitle}
+              onChange={(event) => setGameTitle(event.target.value)}
+              placeholder="Friday Match"
+            />
+            <br />
+            <label htmlFor="game-password">Join password (optional)</label>
+            <br />
+            <input
+              id="game-password"
+              type="password"
+              value={gamePassword}
+              onChange={(event) => setGamePassword(event.target.value)}
+              placeholder="toasty"
+            />
+            <br />
+            <button type="submit" disabled={createGameMutation.isPending}>
+              {createGameMutation.isPending ? "Creating..." : "Create game"}
+            </button>
+          </form>
+
+          {createGameMutation.isError ? <p>Create error: {createGameMutation.error.message}</p> : null}
+
+          {createdGame ? (
+            <>
+              <p>
+                Created game code: <strong>{createdGame.gameCode}</strong>
+              </p>
+              <p>Game ID: {createdGame.gameId}</p>
+
+              <h3>Game Events</h3>
+              {gameEvents.length === 0 ? (
+                <p>No realtime events yet.</p>
+              ) : (
+                <ul>
+                  {gameEvents.map((event) => (
+                    <li key={event.id}>
+                      {event.event_type} at {new Date(event.created_at).toLocaleTimeString()}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : null}
+        </section>
+      ) : null}
     </main>
   );
 }
