@@ -108,6 +108,7 @@ interface CommandReplayEntry {
 }
 
 type BoardInteractionMode = "inspect" | "plan";
+type MobileSidebarPanel = "lobby" | "players" | "alliances" | "chat" | "invite" | "commands" | "events" | "replay";
 
 type PlannedOrder = {
   orderNumber: number;
@@ -374,6 +375,7 @@ export function GamePage() {
   const [activeTroopCount, setActiveTroopCount] = useState(1);
   const [isCutscenePlaying, setIsCutscenePlaying] = useState(false);
   const [cutsceneStepIndex, setCutsceneStepIndex] = useState(0);
+  const [mobileSidebarPanel, setMobileSidebarPanel] = useState<MobileSidebarPanel>("lobby");
 
   const authQuery = useQuery({
     queryKey: ["auth", "user"],
@@ -1193,6 +1195,9 @@ export function GamePage() {
     await navigator.clipboard.writeText(inviteLink);
   };
 
+  const mobilePanelClass = (panel: MobileSidebarPanel) =>
+    mobileSidebarPanel === panel ? "block" : "hidden";
+
   const savePlannedOrder = async (advanceToNextSlot: boolean) => {
     if (!canSubmitPlannedOrder || applyCommandMutation.isPending) return;
 
@@ -1243,9 +1248,34 @@ export function GamePage() {
         </div>
       </header>
 
+      <div className="flex flex-wrap gap-1 lg:hidden">
+        {(
+          [
+            ["lobby", "Lobby"],
+            ["players", "Players"],
+            ["alliances", "Alliances"],
+            ["chat", "Chat"],
+            ["invite", "Invite"],
+            ["commands", "Commands"],
+            ["events", "Events"],
+            ["replay", "Replay"],
+          ] as Array<[MobileSidebarPanel, string]>
+        ).map(([panel, label]) => (
+          <Button
+            key={panel}
+            type="button"
+            size="xs"
+            variant={mobileSidebarPanel === panel ? "default" : "outline"}
+            onClick={() => setMobileSidebarPanel(panel)}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+
       <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
 
-      <Card className="lg:col-start-2">
+      <Card className={`${mobilePanelClass("lobby")} lg:col-start-2 lg:block`}>
         <CardHeader>
           <CardTitle>Lobby</CardTitle>
           <CardDescription>Metadata, members, and readiness for the active round.</CardDescription>
@@ -1302,7 +1332,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card className="lg:col-start-2">
+      <Card className={`${mobilePanelClass("players")} lg:col-start-2 lg:block`}>
         <CardHeader>
           <CardTitle>Players</CardTitle>
           <CardDescription>Manage your profile and view current players in this game.</CardDescription>
@@ -1354,7 +1384,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card className="lg:col-start-2">
+      <Card className={`${mobilePanelClass("alliances")} lg:col-start-2 lg:block`}>
         <CardHeader>
           <CardTitle>Alliances</CardTitle>
           <CardDescription>Create and join alliances for scoped chat and coordination.</CardDescription>
@@ -1424,7 +1454,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card className="lg:col-start-2">
+      <Card className={`${mobilePanelClass("chat")} lg:col-start-2 lg:block`}>
         <CardHeader>
           <CardTitle>Chat</CardTitle>
           <CardDescription>Global, alliance, and direct messages for in-game communication.</CardDescription>
@@ -1723,7 +1753,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card className="lg:col-start-2">
+      <Card className={`${mobilePanelClass("invite")} lg:col-start-2 lg:block`}>
         <CardHeader>
           <CardTitle>Invite Link</CardTitle>
           <CardDescription>Create and share tokenized invite links.</CardDescription>
@@ -1768,7 +1798,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card className="lg:col-start-2">
+      <Card className={`${mobilePanelClass("commands")} lg:col-start-2 lg:block`}>
         <CardHeader>
           <CardTitle>Command Submit</CardTitle>
           <CardDescription>Send command payloads to the authoritative apply-command endpoint.</CardDescription>
@@ -1810,7 +1840,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card className="lg:col-start-1">
+      <Card className={`${mobilePanelClass("events")} lg:col-start-1 lg:block`}>
         <CardHeader>
           <CardTitle>Game Events</CardTitle>
           <CardDescription>Live feed of game events for this workspace.</CardDescription>
@@ -1831,7 +1861,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card className="lg:col-start-1">
+      <Card className={`${mobilePanelClass("replay")} lg:col-start-1 lg:block`}>
         <CardHeader>
           <CardTitle>Round Replay Helper</CardTitle>
           <CardDescription>
