@@ -56,9 +56,58 @@ interface PlayerReadinessRecord {
   updated_at: string;
 }
 
+interface CommandReplayEntry {
+  sourceEventId: number;
+  round: number;
+  executionIndex: number;
+  playerUserId: string;
+  commandType: string;
+  createdAt: string;
+}
+
 function shortId(value: string): string {
   if (value.length <= 12) return value;
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asText(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function getCommandReplayEntries(events: GameEventRecord[]): CommandReplayEntry[] {
+  return events
+    .filter((event) => event.event_type === "command.executed")
+    .map((event) => {
+      const round = asNumber(event.payload.round);
+      const executionIndex = asNumber(event.payload.executionIndex);
+      const sourceEventId = asNumber(event.payload.sourceEventId);
+      const playerUserId = asText(event.payload.playerUserId);
+      const commandType = asText(event.payload.commandType);
+
+      if (
+        round === null ||
+        executionIndex === null ||
+        sourceEventId === null ||
+        !playerUserId ||
+        !commandType
+      ) {
+        return null;
+      }
+
+      return {
+        sourceEventId,
+        round,
+        executionIndex,
+        playerUserId,
+        commandType,
+        createdAt: event.created_at,
+      };
+    })
+    .filter((entry): entry is CommandReplayEntry => entry !== null);
 }
 
 export function GamePage() {
@@ -338,6 +387,18 @@ export function GamePage() {
     ? `${window.location.origin}/?inviteToken=${encodeURIComponent(generatedInvite.inviteToken)}`
     : "";
 
+  const commandReplayEntries = getCommandReplayEntries(gameEvents);
+  const latestExecutedRound = commandReplayEntries.reduce<number | null>(
+    (current, entry) => (current === null || entry.round > current ? entry.round : current),
+    null,
+  );
+  const latestRoundReplay =
+    latestExecutedRound === null
+      ? []
+      : commandReplayEntries
+          .filter((entry) => entry.round === latestExecutedRound)
+          .sort((left, right) => left.executionIndex - right.executionIndex);
+
   const copyInviteLink = async () => {
     if (!inviteLink) return;
     await navigator.clipboard.writeText(inviteLink);
@@ -542,6 +603,37 @@ export function GamePage() {
               ))}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Round Replay Helper</CardTitle>
+          <CardDescription>
+            Deterministic command execution order for the most recently executed round.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {latestExecutedRound === null ? <p>No executed rounds yet.</p> : null}
+          {latestExecutedRound !== null ? (
+            <>
+              <p>
+                Latest executed round: <strong>{latestExecutedRound}</strong>
+              </p>
+              {latestRoundReplay.length === 0 ? (
+                <p>No command execution entries found for this round.</p>
+              ) : (
+                <ol>
+                  {latestRoundReplay.map((entry) => (
+                    <li key={entry.sourceEventId}>
+                      #{entry.executionIndex + 1} - {entry.commandType} by {shortId(entry.playerUserId)} at{" "}
+                      {new Date(entry.createdAt).toLocaleTimeString()}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </>
+          ) : null}
         </CardContent>
       </Card>
     </main>
