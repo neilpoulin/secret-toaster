@@ -172,7 +172,7 @@ function hexStyle(type: string, palette: BoardPalette): HexVisualStyle {
 }
 
 function shortId(value: string): string {
-  const maxLength = 10;
+  const maxLength = 8;
   if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength)}...`;
 }
@@ -425,7 +425,10 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
               const knightCount = snapshot?.knightCount ?? 0;
               const hasTroops = troopCount > 0;
               const hasKnights = knightCount > 0;
+              const hasUnitBadges = hasTroops || hasKnights;
               const showOwnerLabel = Boolean(snapshot?.ownerUserId) && (isActive || isPlannedFrom || isPlannedTo);
+              const ownerLabelY = hasUnitBadges ? hex.cy - 40 : hex.cy - 32;
+              const badgesY = hasUnitBadges ? hex.cy + 24 : hex.cy + 23;
               const idFill =
                 isPlannedFrom
                   ? palette.fromStroke
@@ -489,23 +492,35 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
                   ) : null}
 
                   {snapshot?.ownerUserId && showOwnerLabel ? (
-                    <Text
-                      x={hex.cx - 26}
-                      y={hex.cy - 30}
-                      width={52}
-                      align="center"
-                      fontSize={10}
-                      fill={palette.ownerText}
-                      opacity={textOpacity}
-                      text={shortId(snapshot.ownerUserId)}
-                    />
+                    <Group>
+                      <Rect
+                        x={hex.cx - 31}
+                        y={ownerLabelY - 2}
+                        width={62}
+                        height={13}
+                        cornerRadius={6}
+                        fill={palette.stageBg}
+                        opacity={0.92 * textOpacity}
+                      />
+                      <Text
+                        x={hex.cx - 30}
+                        y={ownerLabelY}
+                        width={60}
+                        align="center"
+                        fontSize={9}
+                        fontStyle="600"
+                        fill={palette.ownerText}
+                        opacity={textOpacity}
+                        text={shortId(snapshot.ownerUserId)}
+                      />
+                    </Group>
                   ) : null}
 
                   {hasTroops ? (
                     <Group>
                       <Circle
                         x={hex.cx}
-                        y={hex.cy + 23}
+                        y={badgesY}
                         radius={11}
                         fill={palette.troopsBadgeBg}
                         opacity={0.96}
@@ -514,7 +529,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
                       />
                       <Text
                         x={hex.cx - 16}
-                        y={hex.cy + 17}
+                        y={badgesY - 6}
                         width={32}
                         align="center"
                         fontSize={10}
@@ -529,7 +544,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
                     <Group>
                       <Circle
                         x={hasTroops ? hex.cx + 21 : hex.cx}
-                        y={hex.cy + 23}
+                        y={badgesY}
                         radius={9}
                         fill={palette.knightsBadgeBg}
                         opacity={0.98}
@@ -538,7 +553,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
                       />
                       <Text
                         x={hasTroops ? hex.cx + 11 : hex.cx - 10}
-                        y={hex.cy + 18}
+                        y={badgesY - 5}
                         width={20}
                         align="center"
                         fontSize={9}
