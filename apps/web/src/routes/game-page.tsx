@@ -191,7 +191,12 @@ function cloneProjectedState(input: Map<number, ProjectedHexState>): Map<number,
   return next;
 }
 
-function buildPlayerColorMap(userIds: string[]): Record<string, string> {
+function buildPlayerColorMap(input: {
+  userIds: string[];
+  allianceByUserId: Map<string, string | null>;
+  allianceById: Map<string, AllianceRecord>;
+}): Record<string, string> {
+  const { userIds, allianceByUserId, allianceById } = input;
   const uniqueSorted = [...new Set(userIds)].sort();
   const map: Record<string, string> = {};
 
@@ -229,10 +234,43 @@ function buildPlayerColorMap(userIds: string[]): Record<string, string> {
     return `#${toHex(Math.round((r + m) * 255))}${toHex(Math.round((g + m) * 255))}${toHex(Math.round((b + m) * 255))}`;
   };
 
-  uniqueSorted.forEach((userId, index) => {
-    const hue = (index * 137.508) % 360;
-    map[userId] = hslToHex(hue, 0.72, 0.52);
+  const usedColors = new Set<string>();
+  const generateUniqueColor = (seedIndex: number): string => {
+    let attempts = 0;
+    while (attempts < 360) {
+      const hue = ((seedIndex + attempts) * 137.508) % 360;
+      const candidate = hslToHex(hue, 0.72, 0.52);
+      if (!usedColors.has(candidate)) {
+        usedColors.add(candidate);
+        return candidate;
+      }
+      attempts += 1;
+    }
+    const fallback = "#94A3B8";
+    usedColors.add(fallback);
+    return fallback;
+  };
+
+  const allianceIds = [...new Set(uniqueSorted.map((userId) => allianceByUserId.get(userId)).filter((id): id is string => Boolean(id)))].sort();
+
+  allianceIds.forEach((allianceId, index) => {
+    const alliance = allianceById.get(allianceId);
+    const desired = alliance?.color_hex?.toUpperCase() ?? null;
+    const allianceColor = desired && !usedColors.has(desired) ? desired : generateUniqueColor(index);
+    usedColors.add(allianceColor);
+
+    uniqueSorted
+      .filter((userId) => allianceByUserId.get(userId) === allianceId)
+      .forEach((userId) => {
+        map[userId] = allianceColor;
+      });
   });
+
+  uniqueSorted.forEach((userId, index) => {
+    if (map[userId]) return;
+    map[userId] = generateUniqueColor(index + allianceIds.length + 1);
+  });
+
   return map;
 }
 
@@ -857,7 +895,11 @@ export function GamePage() {
   const allianceById = new Map(alliances.map((alliance) => [alliance.id, alliance]));
   const currentUserAllianceId = currentUserId ? playerAllianceByUserId.get(currentUserId) ?? null : null;
   const availableDirectRecipients = (gameDetailsQuery.data?.memberships ?? []).filter((member) => member.user_id !== currentUserId);
-  const playerColors = buildPlayerColorMap((gameDetailsQuery.data?.memberships ?? []).map((member) => member.user_id));
+  const playerColors = buildPlayerColorMap({
+    userIds: (gameDetailsQuery.data?.memberships ?? []).map((member) => member.user_id),
+    allianceByUserId: playerAllianceByUserId,
+    allianceById,
+  });
 
   const getDisplayName = (userId: string) => {
     const profile = profileByUserId.get(userId);
@@ -1147,6 +1189,7 @@ export function GamePage() {
   }, [isCutscenePlaying, cutsceneStepIndex, cutsceneSteps.length]);
 
   const handleBoardHexSelect = (hexId: number) => {
+    if (isCutscenePlaying) return;
     setSelectedHexId(hexId);
 
     if (boardInteractionMode !== "plan") return;
@@ -1564,6 +1607,7 @@ export function GamePage() {
               type="button"
               size="xs"
               variant={boardInteractionMode === "inspect" ? "default" : "outline"}
+              disabled={isCutscenePlaying}
               onClick={() => setBoardInteractionMode("inspect")}
             >
               Inspect mode
@@ -1572,6 +1616,7 @@ export function GamePage() {
               type="button"
               size="xs"
               variant={boardInteractionMode === "plan" ? "default" : "outline"}
+              disabled={isCutscenePlaying}
               onClick={() => setBoardInteractionMode("plan")}
             >
               Plan mode
@@ -1639,7 +1684,7 @@ export function GamePage() {
             <Button
               type="button"
               size="xs"
-              disabled={!canSubmitPlannedOrder || applyCommandMutation.isPending}
+              disabled={isCutscenePlaying || !canSubmitPlannedOrder || applyCommandMutation.isPending}
               onClick={() => {
                 void savePlannedOrder(false);
               }}
@@ -1650,7 +1695,7 @@ export function GamePage() {
               type="button"
               size="xs"
               variant="secondary"
-              disabled={!canSubmitPlannedOrder || applyCommandMutation.isPending || activeOrderNumber >= 3}
+              disabled={isCutscenePlaying || !canSubmitPlannedOrder || applyCommandMutation.isPending || activeOrderNumber >= 3}
               onClick={() => {
                 void savePlannedOrder(true);
               }}
@@ -1689,7 +1734,7 @@ export function GamePage() {
             legalDestinationHexIds={plannedFromHexId === null ? undefined : legalDestinationHexIds}
             playerColors={playerColors}
             playbackStep={activeCutsceneStep}
-            onSelectHex={handleBoardHexSelect}
+            onSelectHex={isCutscenePlaying ? () => {} : handleBoardHexSelect}
           />
 
           {selectedHex ? (
