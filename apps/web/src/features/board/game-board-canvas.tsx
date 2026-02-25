@@ -190,8 +190,8 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
   const baseHexes = useMemo(
     () =>
       [...layout.hexes].sort((left, right) => {
-        const leftPriority = left.type === "BLANK" ? 1 : 0;
-        const rightPriority = right.type === "BLANK" ? 1 : 0;
+        const leftPriority = left.type === "BLANK" ? 0 : 1;
+        const rightPriority = right.type === "BLANK" ? 0 : 1;
         if (leftPriority !== rightPriority) return leftPriority - rightPriority;
         return left.index - right.index;
       }),
