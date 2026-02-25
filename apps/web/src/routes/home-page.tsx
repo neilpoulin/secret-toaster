@@ -22,6 +22,20 @@ interface JoinGameResponse {
   gameCode?: string | null;
 }
 
+interface MyGameRecord {
+  game_id: string;
+  role: string;
+  is_active: boolean;
+  games: Array<{
+    id: string;
+    game_code: string;
+    title: string | null;
+    status: string;
+    round: number;
+    created_at: string;
+  }>;
+}
+
 function getInitialInviteToken(): string {
   if (typeof window === "undefined") return "";
   return new URLSearchParams(window.location.search).get("inviteToken") ?? "";
@@ -45,6 +59,30 @@ export function HomePage() {
       const { data, error } = await supabase.auth.getSession();
       if (error) throw error;
       return data.session?.user ?? null;
+    },
+  });
+
+  const myGamesQuery = useQuery({
+    queryKey: ["my-games", authQuery.data?.id],
+    enabled: Boolean(authQuery.data?.id),
+    refetchInterval: authQuery.data ? 5000 : false,
+    queryFn: async (): Promise<MyGameRecord[]> => {
+      const userId = authQuery.data?.id;
+      if (!userId) return [];
+
+      const { data, error } = await supabase
+        .schema("secret_toaster")
+        .from("game_memberships")
+        .select("game_id, role, is_active, games:games(id, game_code, title, status, round, created_at)")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .order("joined_at", { ascending: false });
+
+      if (error || !data) {
+        throw new Error(error?.message ?? "Failed to load active games");
+      }
+
+      return data as MyGameRecord[];
     },
   });
 
@@ -245,6 +283,45 @@ export function HomePage() {
             <CardTitle>Game Entry</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold">My Active Games</h2>
+              {myGamesQuery.isLoading ? <p>Loading active games...</p> : null}
+              {myGamesQuery.isError ? <p>Active games error: {myGamesQuery.error.message}</p> : null}
+              {myGamesQuery.data && myGamesQuery.data.length === 0 ? <p>No active games yet.</p> : null}
+              {myGamesQuery.data && myGamesQuery.data.length > 0 ? (
+                <ul className="space-y-2">
+                  {myGamesQuery.data.map((membership) => {
+                    const game = membership.games[0];
+                    if (!game) return null;
+
+                    return (
+                      <li key={`${membership.game_id}-${membership.role}`} className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            const nextActiveGame: ActiveGame = {
+                              gameId: game.id,
+                              gameCode: game.game_code,
+                              source: "joined",
+                            };
+                            setActiveGame(nextActiveGame);
+                            setStoredActiveGame(nextActiveGame);
+                            void navigate({ to: "/games/$gameId", params: { gameId: game.id } });
+                          }}
+                        >
+                          Open {game.game_code}
+                        </Button>
+                        <span>
+                          {game.title ?? "Untitled"} - {game.status} - round {game.round} - role {membership.role}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </div>
+
             <div className="space-y-2">
               <h2 className="text-xl font-semibold">Create Game</h2>
               <form
