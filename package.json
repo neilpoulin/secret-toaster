@@ -1,0 +1,16 @@
+{
+  "name": "secret-toaster",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @secret-toaster/web",
+    "build": "npm run build -w @secret-toaster/web",
+    "lint": "npm run lint -w @secret-toaster/web",
+    "typecheck": "npm run typecheck -w @secret-toaster/web",
+    "test:domain": "npm run test -w @secret-toaster/domain"
+  }
+}
