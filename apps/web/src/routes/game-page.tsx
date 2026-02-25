@@ -152,6 +152,8 @@ export function GamePage() {
   const [gameEvents, setGameEvents] = useState<GameEventRecord[]>([]);
   const [gameEventsError, setGameEventsError] = useState<string | null>(null);
   const [selectedHexId, setSelectedHexId] = useState<number>(LEGACY_BOARD.castleId);
+  const [plannedFromHexId, setPlannedFromHexId] = useState<number | null>(null);
+  const [plannedToHexId, setPlannedToHexId] = useState<number | null>(null);
 
   const authQuery = useQuery({
     queryKey: ["auth", "user"],
@@ -418,6 +420,71 @@ export function GamePage() {
   const currentState = gameDetailsQuery.data?.game.current_state ?? {};
   const selectedHex = LEGACY_BOARD.hexes[selectedHexId] ?? null;
   const selectedHexSnapshot = selectedHex ? getHexSnapshot(currentState, selectedHex.index) : null;
+  const selectedHexNeighbors =
+    selectedHex?.neighbors.filter((neighbor): neighbor is number => neighbor !== null) ?? [];
+  const selectedIsReachableFromPlannedStart =
+    plannedFromHexId === null
+      ? false
+      : LEGACY_BOARD.hexes[plannedFromHexId]?.neighbors.some((neighbor) => neighbor === selectedHexId) ?? false;
+
+  const updateCommandPayloadOrderFields = (fromHexId: number | null, toHexId: number | null) => {
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = JSON.parse(commandPayloadText) as Record<string, unknown>;
+    } catch {
+      parsed = {};
+    }
+
+    const nextPayload: Record<string, unknown> = { ...parsed };
+    if (fromHexId === null) {
+      delete nextPayload.fromHexId;
+    } else {
+      nextPayload.fromHexId = fromHexId;
+    }
+
+    if (toHexId === null) {
+      delete nextPayload.toHexId;
+    } else {
+      nextPayload.toHexId = toHexId;
+    }
+
+    if (typeof nextPayload.orderNumber !== "number") {
+      nextPayload.orderNumber = 1;
+    }
+
+    setCommandPayloadText(JSON.stringify(nextPayload, null, 2));
+  };
+
+  const setSelectedAsOrderStart = () => {
+    const nextStart = selectedHexId;
+    setPlannedFromHexId(nextStart);
+    setPlannedToHexId((currentTo) => {
+      const isCurrentStillReachable =
+        currentTo === null
+          ? true
+          : LEGACY_BOARD.hexes[nextStart]?.neighbors.some((neighbor) => neighbor === currentTo) ?? false;
+      const nextTo = isCurrentStillReachable ? currentTo : null;
+      updateCommandPayloadOrderFields(nextStart, nextTo);
+      return nextTo;
+    });
+    setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
+  };
+
+  const setSelectedAsOrderDestination = () => {
+    if (plannedFromHexId === null) return;
+    const isReachable = LEGACY_BOARD.hexes[plannedFromHexId]?.neighbors.some((neighbor) => neighbor === selectedHexId) ?? false;
+    if (!isReachable) return;
+
+    setPlannedToHexId(selectedHexId);
+    updateCommandPayloadOrderFields(plannedFromHexId, selectedHexId);
+    setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
+  };
+
+  const clearPlannedOrder = () => {
+    setPlannedFromHexId(null);
+    setPlannedToHexId(null);
+    updateCommandPayloadOrderFields(null, null);
+  };
 
   const copyInviteLink = async () => {
     if (!inviteLink) return;
@@ -539,6 +606,8 @@ export function GamePage() {
           <GameBoardCanvas
             currentState={currentState}
             selectedHexId={selectedHexId}
+            plannedFromHexId={plannedFromHexId}
+            plannedToHexId={plannedToHexId}
             onSelectHex={setSelectedHexId}
           />
 
@@ -558,10 +627,28 @@ export function GamePage() {
               <p>
                 Neighbors:{" "}
                 <strong>
-                  {selectedHex.neighbors
-                    .filter((neighbor): neighbor is number => neighbor !== null)
-                    .join(", ") || "none"}
+                  {selectedHexNeighbors.join(", ") || "none"}
                 </strong>
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" size="xs" variant="secondary" onClick={setSelectedAsOrderStart}>
+                  Set as start
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="secondary"
+                  disabled={plannedFromHexId === null || !selectedIsReachableFromPlannedStart}
+                  onClick={setSelectedAsOrderDestination}
+                >
+                  Set as destination
+                </Button>
+                <Button type="button" size="xs" variant="outline" onClick={clearPlannedOrder}>
+                  Clear planned order
+                </Button>
+              </div>
+              <p className="mt-2 text-muted-foreground">
+                Planned order: from {plannedFromHexId ?? "-"} to {plannedToHexId ?? "-"}
               </p>
             </div>
           ) : null}
