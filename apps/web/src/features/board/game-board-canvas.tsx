@@ -186,7 +186,7 @@ export interface GameBoardCanvasProps {
 
 export function GameBoardCanvas(props: GameBoardCanvasProps) {
   const { currentState, selectedHexId, plannedFromHexId = null, plannedToHexId = null, onSelectHex } = props;
-  const layout = useMemo(() => buildBoardLayout({ boardSpec: LEGACY_BOARD, radius: 34, padding: 24 }), []);
+  const layout = useMemo(() => buildBoardLayout({ boardSpec: LEGACY_BOARD, radius: 34, padding: 0 }), []);
   const hexByIndex = useMemo(() => new Map(layout.hexes.map((hex) => [hex.index, hex])), [layout.hexes]);
   const isPlayableHex = (hexIndex: number): boolean => {
     const hex = hexByIndex.get(hexIndex);
@@ -245,8 +245,8 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
   const resetZoom = () => setZoomLevel(1);
 
   return (
-    <div ref={wrapperRef} className="w-full rounded-lg border border-border bg-card/80 p-2">
-      <div className="mb-2 flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-foreground">
+    <div ref={wrapperRef} className="w-full overflow-hidden rounded-lg border border-border bg-card/80">
+      <div className="flex items-center justify-between gap-2 border-b bg-muted px-3 py-2 text-foreground">
         <p className="text-sm font-medium text-muted-foreground">
           {hoverHexId === null ? "Hover a hex to preview adjacency" : `Hovering #${hoverHexId}`}
         </p>
@@ -265,14 +265,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
       </div>
       <Stage width={containerWidth} height={stageHeight}>
         <Layer listening={false}>
-          <Rect
-            x={0}
-            y={0}
-            width={containerWidth}
-            height={stageHeight}
-            fill={palette.stageBg}
-            cornerRadius={8}
-          />
+          <Rect x={0} y={0} width={containerWidth} height={stageHeight} fill={palette.stageBg} />
         </Layer>
 
         <Layer>
