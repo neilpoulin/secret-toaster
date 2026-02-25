@@ -38,6 +38,34 @@
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
+
+  --board-stage-bg: #f8fafc;
+  --board-land-fill: #86efac;
+  --board-land-stroke: #059669;
+  --board-keep-fill: #7dd3fc;
+  --board-keep-stroke: #0369a1;
+  --board-castle-fill: #facc15;
+  --board-castle-stroke: #b45309;
+  --board-blank-fill: #e5e7eb;
+  --board-blank-stroke: #cbd5e1;
+  --board-text: #0f172a;
+  --board-text-muted: #475569;
+  --board-label: #1f2937;
+  --board-owner-text: #1d4ed8;
+  --board-state-neighbor-fill: #bfdbfe;
+  --board-state-neighbor-stroke: #1d4ed8;
+  --board-state-selected-fill: #93c5fd;
+  --board-state-selected-stroke: #1e40af;
+  --board-state-active-fill: #60a5fa;
+  --board-state-active-stroke: #1e3a8a;
+  --board-state-from-fill: #fdba74;
+  --board-state-from-stroke: #c2410c;
+  --board-state-to-fill: #c4b5fd;
+  --board-state-to-stroke: #6d28d9;
+  --board-badge-troops-bg: #111827;
+  --board-badge-troops-text: #f9fafb;
+  --board-badge-knights-bg: #0f766e;
+  --board-badge-knights-text: #ecfeff;
 }
 
 @theme inline {
@@ -130,4 +158,32 @@
   --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.551 0.027 264.364);
+
+  --board-stage-bg: #0b1220;
+  --board-land-fill: #14532d;
+  --board-land-stroke: #34d399;
+  --board-keep-fill: #0c4a6e;
+  --board-keep-stroke: #38bdf8;
+  --board-castle-fill: #78350f;
+  --board-castle-stroke: #f59e0b;
+  --board-blank-fill: #1f2937;
+  --board-blank-stroke: #334155;
+  --board-text: #e2e8f0;
+  --board-text-muted: #94a3b8;
+  --board-label: #f1f5f9;
+  --board-owner-text: #93c5fd;
+  --board-state-neighbor-fill: #1e3a8a;
+  --board-state-neighbor-stroke: #93c5fd;
+  --board-state-selected-fill: #1d4ed8;
+  --board-state-selected-stroke: #bfdbfe;
+  --board-state-active-fill: #1e40af;
+  --board-state-active-stroke: #dbeafe;
+  --board-state-from-fill: #9a3412;
+  --board-state-from-stroke: #fdba74;
+  --board-state-to-fill: #581c87;
+  --board-state-to-stroke: #c4b5fd;
+  --board-badge-troops-bg: #e5e7eb;
+  --board-badge-troops-text: #111827;
+  --board-badge-knights-bg: #99f6e4;
+  --board-badge-knights-text: #042f2e;
 }

@@ -5,7 +5,7 @@ import { legacyBoardX, legacyBoardY } from "@secret-toaster/domain";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { LEGACY_BOARD, LegacyBoardCanvas } from "@/features/board/legacy-board-canvas";
+import { LEGACY_BOARD, GameBoardCanvas } from "@/features/board/game-board-canvas";
 import { getHexSnapshot } from "@/features/board/state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -530,7 +530,7 @@ export function GamePage() {
             <span className="rounded border bg-muted px-2 py-1">Blank</span>
           </div>
 
-          <LegacyBoardCanvas
+          <GameBoardCanvas
             currentState={currentState}
             selectedHexId={selectedHexId}
             onSelectHex={setSelectedHexId}

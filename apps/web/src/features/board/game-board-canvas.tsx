@@ -18,15 +18,114 @@ interface HexVisualStyle {
   fillOpacity: number;
 }
 
-function hexStyle(type: string): HexVisualStyle {
+interface BoardPalette {
+  stageBg: string;
+  landFill: string;
+  landStroke: string;
+  keepFill: string;
+  keepStroke: string;
+  castleFill: string;
+  castleStroke: string;
+  blankFill: string;
+  blankStroke: string;
+  text: string;
+  textMuted: string;
+  label: string;
+  ownerText: string;
+  neighborFill: string;
+  neighborStroke: string;
+  selectedFill: string;
+  selectedStroke: string;
+  activeFill: string;
+  activeStroke: string;
+  fromFill: string;
+  fromStroke: string;
+  toFill: string;
+  toStroke: string;
+  troopsBadgeBg: string;
+  troopsBadgeText: string;
+  knightsBadgeBg: string;
+  knightsBadgeText: string;
+}
+
+const DEFAULT_PALETTE: BoardPalette = {
+  stageBg: "#f8fafc",
+  landFill: "#86efac",
+  landStroke: "#059669",
+  keepFill: "#7dd3fc",
+  keepStroke: "#0369a1",
+  castleFill: "#facc15",
+  castleStroke: "#b45309",
+  blankFill: "#e5e7eb",
+  blankStroke: "#cbd5e1",
+  text: "#0f172a",
+  textMuted: "#475569",
+  label: "#1f2937",
+  ownerText: "#1d4ed8",
+  neighborFill: "#bfdbfe",
+  neighborStroke: "#1d4ed8",
+  selectedFill: "#93c5fd",
+  selectedStroke: "#1e40af",
+  activeFill: "#60a5fa",
+  activeStroke: "#1e3a8a",
+  fromFill: "#fdba74",
+  fromStroke: "#c2410c",
+  toFill: "#c4b5fd",
+  toStroke: "#6d28d9",
+  troopsBadgeBg: "#111827",
+  troopsBadgeText: "#f9fafb",
+  knightsBadgeBg: "#0f766e",
+  knightsBadgeText: "#ecfeff",
+};
+
+function readBoardPalette(): BoardPalette {
+  if (typeof window === "undefined") return DEFAULT_PALETTE;
+  const styles = window.getComputedStyle(document.documentElement);
+  const cssVar = (name: string, fallback: string): string => {
+    const value = styles.getPropertyValue(name).trim();
+    return value.length > 0 ? value : fallback;
+  };
+
+  return {
+    stageBg: cssVar("--board-stage-bg", DEFAULT_PALETTE.stageBg),
+    landFill: cssVar("--board-land-fill", DEFAULT_PALETTE.landFill),
+    landStroke: cssVar("--board-land-stroke", DEFAULT_PALETTE.landStroke),
+    keepFill: cssVar("--board-keep-fill", DEFAULT_PALETTE.keepFill),
+    keepStroke: cssVar("--board-keep-stroke", DEFAULT_PALETTE.keepStroke),
+    castleFill: cssVar("--board-castle-fill", DEFAULT_PALETTE.castleFill),
+    castleStroke: cssVar("--board-castle-stroke", DEFAULT_PALETTE.castleStroke),
+    blankFill: cssVar("--board-blank-fill", DEFAULT_PALETTE.blankFill),
+    blankStroke: cssVar("--board-blank-stroke", DEFAULT_PALETTE.blankStroke),
+    text: cssVar("--board-text", DEFAULT_PALETTE.text),
+    textMuted: cssVar("--board-text-muted", DEFAULT_PALETTE.textMuted),
+    label: cssVar("--board-label", DEFAULT_PALETTE.label),
+    ownerText: cssVar("--board-owner-text", DEFAULT_PALETTE.ownerText),
+    neighborFill: cssVar("--board-state-neighbor-fill", DEFAULT_PALETTE.neighborFill),
+    neighborStroke: cssVar("--board-state-neighbor-stroke", DEFAULT_PALETTE.neighborStroke),
+    selectedFill: cssVar("--board-state-selected-fill", DEFAULT_PALETTE.selectedFill),
+    selectedStroke: cssVar("--board-state-selected-stroke", DEFAULT_PALETTE.selectedStroke),
+    activeFill: cssVar("--board-state-active-fill", DEFAULT_PALETTE.activeFill),
+    activeStroke: cssVar("--board-state-active-stroke", DEFAULT_PALETTE.activeStroke),
+    fromFill: cssVar("--board-state-from-fill", DEFAULT_PALETTE.fromFill),
+    fromStroke: cssVar("--board-state-from-stroke", DEFAULT_PALETTE.fromStroke),
+    toFill: cssVar("--board-state-to-fill", DEFAULT_PALETTE.toFill),
+    toStroke: cssVar("--board-state-to-stroke", DEFAULT_PALETTE.toStroke),
+    troopsBadgeBg: cssVar("--board-badge-troops-bg", DEFAULT_PALETTE.troopsBadgeBg),
+    troopsBadgeText: cssVar("--board-badge-troops-text", DEFAULT_PALETTE.troopsBadgeText),
+    knightsBadgeBg: cssVar("--board-badge-knights-bg", DEFAULT_PALETTE.knightsBadgeBg),
+    knightsBadgeText: cssVar("--board-badge-knights-text", DEFAULT_PALETTE.knightsBadgeText),
+  };
+}
+
+function hexStyle(type: string, palette: BoardPalette): HexVisualStyle {
   if (type === "CASTLE") {
     return {
-      fill: "#facc15",
-      stroke: "#b45309",
+      fill: palette.castleFill,
+      stroke: palette.castleStroke,
       label: "C",
-      idFill: "#422006",
-      labelFill: "#422006",
-      shadowColor: "#f59e0b",
+      idFill: palette.label,
+      labelFill: palette.label,
+      shadowColor: palette.castleStroke,
       shadowBlur: 4,
       fillOpacity: 0.88,
     };
@@ -34,12 +133,12 @@ function hexStyle(type: string): HexVisualStyle {
 
   if (type === "KEEP") {
     return {
-      fill: "#7dd3fc",
-      stroke: "#0369a1",
+      fill: palette.keepFill,
+      stroke: palette.keepStroke,
       label: "K",
-      idFill: "#082f49",
-      labelFill: "#0c4a6e",
-      shadowColor: "#0ea5e9",
+      idFill: palette.text,
+      labelFill: palette.text,
+      shadowColor: palette.keepStroke,
       shadowBlur: 4,
       fillOpacity: 0.86,
     };
@@ -47,24 +146,24 @@ function hexStyle(type: string): HexVisualStyle {
 
   if (type === "LAND") {
     return {
-      fill: "#86efac",
-      stroke: "#059669",
+      fill: palette.landFill,
+      stroke: palette.landStroke,
       label: "",
-      idFill: "#022c22",
-      labelFill: "#064e3b",
-      shadowColor: "#10b981",
+      idFill: palette.text,
+      labelFill: palette.text,
+      shadowColor: palette.landStroke,
       shadowBlur: 3,
       fillOpacity: 0.82,
     };
   }
 
   return {
-    fill: "#e5e7eb",
-    stroke: "#cbd5e1",
+    fill: palette.blankFill,
+    stroke: palette.blankStroke,
     label: "",
-    idFill: "#475569",
-    labelFill: "#64748b",
-    shadowColor: "#94a3b8",
+    idFill: palette.textMuted,
+    labelFill: palette.textMuted,
+    shadowColor: palette.blankStroke,
     shadowBlur: 1.5,
     fillOpacity: 0.72,
   };
@@ -75,14 +174,16 @@ function shortId(value: string): string {
   return `${value.slice(0, 4)}...${value.slice(-3)}`;
 }
 
-export interface LegacyBoardCanvasProps {
+export interface GameBoardCanvasProps {
   currentState: Record<string, unknown>;
   selectedHexId: number;
+  plannedFromHexId?: number | null;
+  plannedToHexId?: number | null;
   onSelectHex: (hexId: number) => void;
 }
 
-export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
-  const { currentState, selectedHexId, onSelectHex } = props;
+export function GameBoardCanvas(props: GameBoardCanvasProps) {
+  const { currentState, selectedHexId, plannedFromHexId = null, plannedToHexId = null, onSelectHex } = props;
   const layout = useMemo(() => buildBoardLayout({ boardSpec: LEGACY_BOARD, radius: 34, padding: 24 }), []);
   const hexByIndex = useMemo(() => new Map(layout.hexes.map((hex) => [hex.index, hex])), [layout.hexes]);
   const isPlayableHex = (hexIndex: number): boolean => {
@@ -93,6 +194,20 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
   const [containerWidth, setContainerWidth] = useState(960);
   const [hoverHexId, setHoverHexId] = useState<number | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [palette, setPalette] = useState<BoardPalette>(DEFAULT_PALETTE);
+
+  useEffect(() => {
+    const updatePalette = () => setPalette(readBoardPalette());
+    updatePalette();
+
+    const observer = new MutationObserver(() => updatePalette());
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "style", "data-theme"],
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const element = wrapperRef.current;
@@ -163,7 +278,7 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
             y={0}
             width={containerWidth}
             height={stageHeight}
-            fill="#f8fafc"
+            fill={palette.stageBg}
             cornerRadius={8}
           />
         </Layer>
@@ -171,11 +286,13 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
         <Layer>
           <Group x={groupX} scaleX={scale} scaleY={scale}>
             {layout.hexes.map((hex) => {
-              const style = hexStyle(hex.type);
+              const style = hexStyle(hex.type, palette);
               const isPlayable = hex.type !== "BLANK";
               const isNeighbor = neighborHexSet.has(hex.index);
               const isSelected = hex.index === selectedHexId;
               const isActive = hex.index === activeHexId;
+              const isPlannedFrom = plannedFromHexId === hex.index;
+              const isPlannedTo = plannedToHexId === hex.index;
               const isHovered = hoverHexId === hex.index;
 
               let tileFill = style.fill;
@@ -185,25 +302,41 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
               let tileOpacity = hex.type === "BLANK" ? 0.8 : 1;
 
               if (isNeighbor) {
-                tileFill = "#bfdbfe";
+                tileFill = palette.neighborFill;
                 tileFillOpacity = 0.84;
-                tileStroke = "#1d4ed8";
+                tileStroke = palette.neighborStroke;
                 tileStrokeWidth = 2.4;
                 tileOpacity = 1;
               }
 
               if (isSelected) {
-                tileFill = "#93c5fd";
+                tileFill = palette.selectedFill;
                 tileFillOpacity = 0.9;
-                tileStroke = "#1e40af";
+                tileStroke = palette.selectedStroke;
                 tileStrokeWidth = 3;
                 tileOpacity = 1;
               }
 
               if (isActive) {
-                tileFill = "#60a5fa";
+                tileFill = palette.activeFill;
                 tileFillOpacity = 0.95;
-                tileStroke = "#1e3a8a";
+                tileStroke = palette.activeStroke;
+                tileStrokeWidth = 3.2;
+                tileOpacity = 1;
+              }
+
+              if (isPlannedFrom) {
+                tileFill = palette.fromFill;
+                tileFillOpacity = 0.92;
+                tileStroke = palette.fromStroke;
+                tileStrokeWidth = 3.2;
+                tileOpacity = 1;
+              }
+
+              if (isPlannedTo) {
+                tileFill = palette.toFill;
+                tileFillOpacity = 0.92;
+                tileStroke = palette.toStroke;
                 tileStrokeWidth = 3.2;
                 tileOpacity = 1;
               }
@@ -249,12 +382,21 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
         <Layer listening={false}>
           <Group x={groupX} scaleX={scale} scaleY={scale}>
             {layout.hexes.map((hex) => {
-              const style = hexStyle(hex.type);
+              const style = hexStyle(hex.type, palette);
               const snapshot = getHexSnapshot(currentState, hex.index);
               const isActive = hex.index === activeHexId;
               const isNeighbor = neighborHexSet.has(hex.index);
+              const isPlannedFrom = plannedFromHexId === hex.index;
+              const isPlannedTo = plannedToHexId === hex.index;
               const textOpacity = hoverHexId !== null && !isActive && !isNeighbor ? 0.45 : 1;
-              const idFill = isActive || isNeighbor ? "#172554" : style.idFill;
+              const idFill =
+                isPlannedFrom
+                  ? palette.fromStroke
+                  : isPlannedTo
+                    ? palette.toStroke
+                    : isActive || isNeighbor
+                      ? palette.activeStroke
+                      : style.idFill;
 
               return (
                 <Group key={hex.index}>
@@ -277,9 +419,35 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                       align="center"
                       fontSize={13}
                       fontStyle="700"
-                      fill={isActive || isNeighbor ? "#1e3a8a" : style.labelFill}
+                      fill={isActive || isNeighbor ? palette.activeStroke : style.labelFill}
                       opacity={textOpacity}
                       text={style.label}
+                    />
+                  ) : null}
+
+                  {isPlannedFrom ? (
+                    <Text
+                      x={hex.cx - 8}
+                      y={hex.cy - 30}
+                      width={16}
+                      align="center"
+                      fontSize={10}
+                      fontStyle="700"
+                      fill={palette.fromStroke}
+                      text="S"
+                    />
+                  ) : null}
+
+                  {isPlannedTo ? (
+                    <Text
+                      x={hex.cx - 8}
+                      y={hex.cy - 30}
+                      width={16}
+                      align="center"
+                      fontSize={10}
+                      fontStyle="700"
+                      fill={palette.toStroke}
+                      text="D"
                     />
                   ) : null}
 
@@ -290,7 +458,7 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                       width={44}
                       align="center"
                       fontSize={10}
-                      fill="#1d4ed8"
+                      fill={palette.ownerText}
                       opacity={textOpacity}
                       text={shortId(snapshot.ownerUserId)}
                     />
@@ -298,14 +466,14 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
 
                   {snapshot && snapshot.troopCount !== null ? (
                     <Group>
-                      <Circle x={hex.cx} y={hex.cy + 23} radius={11} fill="#111827" opacity={0.86} />
+                      <Circle x={hex.cx} y={hex.cy + 23} radius={11} fill={palette.troopsBadgeBg} opacity={0.86} />
                       <Text
                         x={hex.cx - 16}
                         y={hex.cy + 17}
                         width={32}
                         align="center"
                         fontSize={10}
-                        fill="#f9fafb"
+                        fill={palette.troopsBadgeText}
                         text={`T${snapshot.troopCount}`}
                       />
                     </Group>
@@ -313,14 +481,14 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
 
                   {snapshot && snapshot.knightCount !== null ? (
                     <Group>
-                      <Circle x={hex.cx + 21} y={hex.cy + 23} radius={9} fill="#0f766e" opacity={0.95} />
+                      <Circle x={hex.cx + 21} y={hex.cy + 23} radius={9} fill={palette.knightsBadgeBg} opacity={0.95} />
                       <Text
                         x={hex.cx + 11}
                         y={hex.cy + 18}
                         width={20}
                         align="center"
                         fontSize={9}
-                        fill="#ecfeff"
+                        fill={palette.knightsBadgeText}
                         text={`K${snapshot.knightCount}`}
                       />
                     </Group>
@@ -341,10 +509,10 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                   points={hex.points}
                   closed
                   fill="rgba(37, 99, 235, 0.12)"
-                  stroke="#2563eb"
+                  stroke={palette.selectedStroke}
                   strokeWidth={3}
                   shadowBlur={10}
-                  shadowColor="#2563eb"
+                  shadowColor={palette.selectedStroke}
                 />
               ))}
 
@@ -356,7 +524,7 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                   points={hex.points}
                   closed
                   fill="rgba(30, 58, 138, 0.18)"
-                  stroke="#1e3a8a"
+                  stroke={palette.activeStroke}
                   strokeWidth={3.2}
                 />
               ))}
