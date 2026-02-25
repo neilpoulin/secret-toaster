@@ -15,6 +15,12 @@ const badgeVariants = cva(
         boardKeep: "border-[var(--board-keep-stroke)] bg-[var(--board-keep-fill)] text-[var(--board-text)]",
         boardCastle: "border-[var(--board-castle-stroke)] bg-[var(--board-castle-fill)] text-[var(--board-text)]",
         boardBlank: "border-[var(--board-blank-stroke)] bg-[var(--board-blank-fill)] text-[var(--board-text-muted)]",
+        boardStateActive:
+          "border-[var(--board-state-active-stroke)] bg-[var(--board-state-active-fill)] text-[var(--board-text)]",
+        boardStateNeighbor:
+          "border-[var(--board-state-neighbor-stroke)] bg-[var(--board-state-neighbor-fill)] text-[var(--board-text)]",
+        boardStateSelected:
+          "border-[var(--board-state-selected-stroke)] bg-[var(--board-state-selected-fill)] text-[var(--board-text)]",
       },
     },
     defaultVariants: {

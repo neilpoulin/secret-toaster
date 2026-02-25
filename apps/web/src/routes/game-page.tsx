@@ -531,6 +531,9 @@ export function GamePage() {
             <Badge variant="boardKeep">Keep</Badge>
             <Badge variant="boardCastle">Castle</Badge>
             <Badge variant="boardBlank">Blank</Badge>
+            <Badge variant="boardStateActive">Hover</Badge>
+            <Badge variant="boardStateNeighbor">Reachable</Badge>
+            <Badge variant="boardStateSelected">Selected</Badge>
           </div>
 
           <GameBoardCanvas
