@@ -28,8 +28,11 @@ export interface LegacyBoardCanvasProps {
 export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
   const { currentState, selectedHexId, onSelectHex } = props;
   const layout = useMemo(() => buildBoardLayout({ boardSpec: LEGACY_BOARD, radius: 34, padding: 24 }), []);
+  const hexByIndex = useMemo(() => new Map(layout.hexes.map((hex) => [hex.index, hex])), [layout.hexes]);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [containerWidth, setContainerWidth] = useState(960);
+  const [hoverHexId, setHoverHexId] = useState<number | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
 
   useEffect(() => {
     const element = wrapperRef.current;
@@ -45,28 +48,74 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
     return () => observer.disconnect();
   }, []);
 
-  const scale = Math.min(containerWidth / layout.width, 1);
+  const fitScale = Math.min(containerWidth / layout.width, 1);
+  const scale = fitScale * zoomLevel;
   const stageHeight = Math.ceil(layout.height * scale);
   const groupX = Math.floor((containerWidth - layout.width * scale) / 2);
+  const activeHexId = hoverHexId ?? selectedHexId;
+  const neighborHexIds =
+    activeHexId === null
+      ? []
+      : (hexByIndex
+          .get(activeHexId)
+          ?.neighbors.filter((neighbor): neighbor is number => neighbor !== null) ?? []);
+  const isHighlighted = (hexId: number): boolean => hexId === selectedHexId || neighborHexIds.includes(hexId);
+  const canZoomIn = zoomLevel < 2;
+  const canZoomOut = zoomLevel > 0.65;
+
+  const increaseZoom = () => setZoomLevel((current) => Math.min(2, Number((current + 0.1).toFixed(2))));
+  const decreaseZoom = () => setZoomLevel((current) => Math.max(0.65, Number((current - 0.1).toFixed(2))));
+  const resetZoom = () => setZoomLevel(1);
 
   return (
     <div ref={wrapperRef} className="w-full rounded-lg border bg-muted/20 p-2">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {hoverHexId === null ? "Hover a hex to preview adjacency" : `Hovering #${hoverHexId}`}
+        </p>
+        <div className="flex items-center gap-1.5 text-xs">
+          <button
+            type="button"
+            onClick={decreaseZoom}
+            disabled={!canZoomOut}
+            className="rounded border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            -
+          </button>
+          <span className="min-w-14 text-center font-medium">{Math.round(zoomLevel * 100)}%</span>
+          <button
+            type="button"
+            onClick={increaseZoom}
+            disabled={!canZoomIn}
+            className="rounded border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            +
+          </button>
+          <button type="button" onClick={resetZoom} className="rounded border px-2 py-1">
+            Reset
+          </button>
+        </div>
+      </div>
       <Stage width={containerWidth} height={stageHeight}>
         <Layer>
           <Group x={groupX} scaleX={scale} scaleY={scale}>
             {layout.hexes.map((hex) => {
               const style = hexStyle(hex.type);
+              const highlighted = isHighlighted(hex.index);
+              const isSelected = hex.index === selectedHexId;
               return (
                 <Line
                   key={hex.index}
                   points={hex.points}
                   closed
                   fill={style.fill}
-                  stroke={style.stroke}
-                  strokeWidth={1.5}
-                  opacity={selectedHexId === hex.index ? 1 : 0.95}
+                  stroke={highlighted ? "#0f766e" : style.stroke}
+                  strokeWidth={isSelected ? 2.8 : highlighted ? 2.2 : 1.5}
+                  opacity={hex.type === "BLANK" && !highlighted ? 0.9 : 0.98}
                   onClick={() => onSelectHex(hex.index)}
                   onTap={() => onSelectHex(hex.index)}
+                  onMouseEnter={() => setHoverHexId(hex.index)}
+                  onMouseLeave={() => setHoverHexId((current) => (current === hex.index ? null : current))}
                 />
               );
             })}
@@ -126,6 +175,21 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                         fontSize={10}
                         fill="#f9fafb"
                         text={`T${snapshot.troopCount}`}
+                      />
+                    </Group>
+                  ) : null}
+
+                  {snapshot && snapshot.knightCount !== null ? (
+                    <Group>
+                      <Circle x={hex.cx + 21} y={hex.cy + 23} radius={9} fill="#0f766e" opacity={0.95} />
+                      <Text
+                        x={hex.cx + 11}
+                        y={hex.cy + 18}
+                        width={20}
+                        align="center"
+                        fontSize={9}
+                        fill="#ecfeff"
+                        text={`K${snapshot.knightCount}`}
                       />
                     </Group>
                   ) : null}
