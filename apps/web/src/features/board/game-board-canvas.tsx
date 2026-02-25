@@ -381,6 +381,38 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
 
         <Layer listening={false}>
           <Group x={groupX} scaleX={scale} scaleY={scale}>
+            {layout.hexes
+              .filter((hex) => hex.index === selectedHexId)
+              .map((hex) => (
+                <Line
+                  key={hex.index}
+                  points={hex.points}
+                  closed
+                  fillEnabled={false}
+                  stroke={palette.selectedStroke}
+                  strokeWidth={3}
+                  shadowBlur={10}
+                  shadowColor={palette.selectedStroke}
+                />
+              ))}
+
+            {layout.hexes
+              .filter((hex) => hex.index === activeHexId)
+              .map((hex) => (
+                <Line
+                  key={`active-${hex.index}`}
+                  points={hex.points}
+                  closed
+                  fillEnabled={false}
+                  stroke={palette.activeStroke}
+                  strokeWidth={3.2}
+                />
+              ))}
+          </Group>
+        </Layer>
+
+        <Layer listening={false}>
+          <Group x={groupX} scaleX={scale} scaleY={scale}>
             {layout.hexes.map((hex) => {
               const style = hexStyle(hex.type, palette);
               const snapshot = getHexSnapshot(currentState, hex.index);
@@ -519,38 +551,6 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
                 </Group>
               );
             })}
-          </Group>
-        </Layer>
-
-        <Layer listening={false}>
-          <Group x={groupX} scaleX={scale} scaleY={scale}>
-            {layout.hexes
-              .filter((hex) => hex.index === selectedHexId)
-              .map((hex) => (
-                <Line
-                  key={hex.index}
-                  points={hex.points}
-                  closed
-                  fillEnabled={false}
-                  stroke={palette.selectedStroke}
-                  strokeWidth={3}
-                  shadowBlur={10}
-                  shadowColor={palette.selectedStroke}
-                />
-              ))}
-
-            {layout.hexes
-              .filter((hex) => hex.index === activeHexId)
-              .map((hex) => (
-                <Line
-                  key={`active-${hex.index}`}
-                  points={hex.points}
-                  closed
-                  fillEnabled={false}
-                  stroke={palette.activeStroke}
-                  strokeWidth={3.2}
-                />
-              ))}
           </Group>
         </Layer>
       </Stage>
