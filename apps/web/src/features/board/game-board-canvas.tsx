@@ -181,11 +181,13 @@ export interface GameBoardCanvasProps {
   selectedHexId: number;
   plannedFromHexId?: number | null;
   plannedToHexId?: number | null;
+  legalDestinationHexIds?: number[];
   onSelectHex: (hexId: number) => void;
 }
 
 export function GameBoardCanvas(props: GameBoardCanvasProps) {
-  const { currentState, selectedHexId, plannedFromHexId = null, plannedToHexId = null, onSelectHex } = props;
+  const { currentState, selectedHexId, plannedFromHexId = null, plannedToHexId = null, legalDestinationHexIds, onSelectHex } =
+    props;
   const layout = useMemo(() => buildBoardLayout({ boardSpec: LEGACY_BOARD, radius: 34, padding: 0 }), []);
   const baseHexes = useMemo(
     () =>
@@ -241,11 +243,13 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
   const groupX = Math.floor((containerWidth - layout.width * scale) / 2);
   const activeHexId = hoverHexId ?? selectedHexId;
   const neighborHexIds =
-    activeHexId === null
-      ? []
-      : (hexByIndex
-          .get(activeHexId)
-          ?.neighbors.filter((neighbor): neighbor is number => neighbor !== null && isPlayableHex(neighbor)) ?? []);
+    legalDestinationHexIds && legalDestinationHexIds.length > 0
+      ? legalDestinationHexIds
+      : activeHexId === null
+        ? []
+        : (hexByIndex
+            .get(activeHexId)
+            ?.neighbors.filter((neighbor): neighbor is number => neighbor !== null && isPlayableHex(neighbor)) ?? []);
   const neighborHexSet = useMemo(() => new Set(neighborHexIds), [neighborHexIds]);
   const canZoomIn = zoomLevel < 2;
   const canZoomOut = zoomLevel > 0.65;

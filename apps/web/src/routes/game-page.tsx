@@ -72,6 +72,8 @@ interface CommandReplayEntry {
   createdAt: string;
 }
 
+type BoardInteractionMode = "inspect" | "plan";
+
 function shortId(value: string): string {
   if (value.length <= 12) return value;
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
@@ -155,6 +157,7 @@ export function GamePage() {
   const [selectedHexId, setSelectedHexId] = useState<number>(LEGACY_BOARD.castleId);
   const [plannedFromHexId, setPlannedFromHexId] = useState<number | null>(null);
   const [plannedToHexId, setPlannedToHexId] = useState<number | null>(null);
+  const [boardInteractionMode, setBoardInteractionMode] = useState<BoardInteractionMode>("inspect");
 
   const authQuery = useQuery({
     queryKey: ["auth", "user"],
@@ -424,14 +427,34 @@ export function GamePage() {
           .filter((entry) => entry.round === latestExecutedRound)
           .sort((left, right) => left.executionIndex - right.executionIndex);
   const currentState = gameDetailsQuery.data?.game.current_state ?? {};
+  const currentUserId = authQuery.data?.id ?? null;
   const selectedHex = LEGACY_BOARD.hexes[selectedHexId] ?? null;
   const selectedHexSnapshot = selectedHex ? getHexSnapshot(currentState, selectedHex.index) : null;
   const selectedHexNeighbors =
     selectedHex?.neighbors.filter((neighbor): neighbor is number => neighbor !== null) ?? [];
-  const selectedIsReachableFromPlannedStart =
+
+  const legalStartHexIds = LEGACY_BOARD.hexes
+    .filter((hex) => hex.type !== "BLANK")
+    .map((hex) => {
+      const snapshot = getHexSnapshot(currentState, hex.index);
+      const ownedByCurrentUser = Boolean(currentUserId && snapshot?.ownerUserId === currentUserId);
+      const hasUnits = (snapshot?.troopCount ?? 0) > 0 || (snapshot?.knightCount ?? 0) > 0;
+      return ownedByCurrentUser && hasUnits ? hex.index : null;
+    })
+    .filter((hexId): hexId is number => hexId !== null);
+
+  const legalStartHexIdSet = new Set<number>(legalStartHexIds);
+  const legalDestinationHexIds =
     plannedFromHexId === null
-      ? false
-      : LEGACY_BOARD.hexes[plannedFromHexId]?.neighbors.some((neighbor) => neighbor === selectedHexId) ?? false;
+      ? []
+      : (LEGACY_BOARD.hexes[plannedFromHexId]?.neighbors
+          .filter((neighbor): neighbor is number => {
+            if (neighbor === null) return false;
+            const neighborHex = LEGACY_BOARD.hexes[neighbor];
+            return Boolean(neighborHex && neighborHex.type !== "BLANK");
+          }) ?? []);
+  const legalDestinationHexIdSet = new Set<number>(legalDestinationHexIds);
+  const selectedIsReachableFromPlannedStart = legalDestinationHexIdSet.has(selectedHexId);
 
   const updateCommandPayloadOrderFields = (fromHexId: number | null, toHexId: number | null) => {
     let parsed: Record<string, unknown> = {};
@@ -462,13 +485,12 @@ export function GamePage() {
   };
 
   const setSelectedAsOrderStart = () => {
+    if (!legalStartHexIdSet.has(selectedHexId)) return;
     const nextStart = selectedHexId;
     setPlannedFromHexId(nextStart);
     setPlannedToHexId((currentTo) => {
       const isCurrentStillReachable =
-        currentTo === null
-          ? true
-          : LEGACY_BOARD.hexes[nextStart]?.neighbors.some((neighbor) => neighbor === currentTo) ?? false;
+        currentTo === null ? true : LEGACY_BOARD.hexes[nextStart]?.neighbors.some((neighbor) => neighbor === currentTo) ?? false;
       const nextTo = isCurrentStillReachable ? currentTo : null;
       updateCommandPayloadOrderFields(nextStart, nextTo);
       return nextTo;
@@ -478,7 +500,7 @@ export function GamePage() {
 
   const setSelectedAsOrderDestination = () => {
     if (plannedFromHexId === null) return;
-    const isReachable = LEGACY_BOARD.hexes[plannedFromHexId]?.neighbors.some((neighbor) => neighbor === selectedHexId) ?? false;
+    const isReachable = legalDestinationHexIdSet.has(selectedHexId);
     if (!isReachable) return;
 
     setPlannedToHexId(selectedHexId);
@@ -490,6 +512,40 @@ export function GamePage() {
     setPlannedFromHexId(null);
     setPlannedToHexId(null);
     updateCommandPayloadOrderFields(null, null);
+  };
+
+  const handleBoardHexSelect = (hexId: number) => {
+    setSelectedHexId(hexId);
+
+    if (boardInteractionMode !== "plan") return;
+
+    if (plannedFromHexId === null) {
+      if (!legalStartHexIdSet.has(hexId)) return;
+      setPlannedFromHexId(hexId);
+      setPlannedToHexId(null);
+      updateCommandPayloadOrderFields(hexId, null);
+      setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
+      return;
+    }
+
+    if (hexId === plannedFromHexId) {
+      clearPlannedOrder();
+      return;
+    }
+
+    if (legalDestinationHexIdSet.has(hexId)) {
+      setPlannedToHexId(hexId);
+      updateCommandPayloadOrderFields(plannedFromHexId, hexId);
+      setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
+      return;
+    }
+
+    if (legalStartHexIdSet.has(hexId)) {
+      setPlannedFromHexId(hexId);
+      setPlannedToHexId(null);
+      updateCommandPayloadOrderFields(hexId, null);
+      setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
+    }
   };
 
   const copyInviteLink = async () => {
@@ -609,12 +665,37 @@ export function GamePage() {
             <Badge variant="boardStateSelected">Selected</Badge>
           </div>
 
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="xs"
+              variant={boardInteractionMode === "inspect" ? "default" : "outline"}
+              onClick={() => setBoardInteractionMode("inspect")}
+            >
+              Inspect mode
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant={boardInteractionMode === "plan" ? "default" : "outline"}
+              onClick={() => setBoardInteractionMode("plan")}
+            >
+              Plan mode
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {boardInteractionMode === "plan"
+                ? "Click your owned hex with units, then click a reachable destination"
+                : "Select any hex to inspect details"}
+            </span>
+          </div>
+
           <GameBoardCanvas
             currentState={currentState}
             selectedHexId={selectedHexId}
             plannedFromHexId={plannedFromHexId}
             plannedToHexId={plannedToHexId}
-            onSelectHex={setSelectedHexId}
+            legalDestinationHexIds={plannedFromHexId === null ? undefined : legalDestinationHexIds}
+            onSelectHex={handleBoardHexSelect}
           />
 
           {selectedHex ? (
@@ -637,7 +718,13 @@ export function GamePage() {
                 </strong>
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
-                <Button type="button" size="xs" variant="secondary" onClick={setSelectedAsOrderStart}>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="secondary"
+                  disabled={!legalStartHexIdSet.has(selectedHexId)}
+                  onClick={setSelectedAsOrderStart}
+                >
                   Set as start
                 </Button>
                 <Button
