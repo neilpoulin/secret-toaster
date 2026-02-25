@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { validateCommandPayload } from "@secret-toaster/contracts";
 import { legacyBoardX, legacyBoardY } from "@secret-toaster/domain";
 
 import { Button } from "@/components/ui/button";
@@ -270,11 +271,16 @@ export function GamePage() {
       const trimmedCommandType = commandType.trim();
       if (!trimmedCommandType) throw new Error("Command type is required");
 
+      const payloadValidation = validateCommandPayload(trimmedCommandType, payload);
+      if (!payloadValidation.success) {
+        throw new Error(`Invalid ${trimmedCommandType} payload: ${payloadValidation.error.issues[0]?.message ?? "invalid payload"}`);
+      }
+
       const { data, error } = await supabase.functions.invoke("secret-toaster-apply-command", {
         body: {
           gameId: activeGame.gameId,
           commandType: trimmedCommandType,
-          payload,
+          payload: payloadValidation.data,
         },
       });
 
