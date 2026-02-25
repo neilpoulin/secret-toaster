@@ -56,6 +56,14 @@ interface GameMembershipRecord {
   joined_at: string;
 }
 
+interface PlayerReadinessRecord {
+  id: string;
+  user_id: string;
+  round: number;
+  is_ready: boolean;
+  updated_at: string;
+}
+
 const ACTIVE_GAME_STORAGE_KEY = "secret-toaster.active-game";
 
 function getInitialInviteToken(): string {
@@ -113,7 +121,11 @@ export function HomePage() {
   const gameDetailsQuery = useQuery({
     queryKey: ["game", "details", activeGame?.gameId],
     enabled: Boolean(activeGame?.gameId && authQuery.data),
-    queryFn: async (): Promise<{ game: GameDetailsRecord; memberships: GameMembershipRecord[] }> => {
+    queryFn: async (): Promise<{
+      game: GameDetailsRecord;
+      memberships: GameMembershipRecord[];
+      readiness: PlayerReadinessRecord[];
+    }> => {
       const gameId = activeGame?.gameId;
       if (!gameId) throw new Error("No active game selected");
 
@@ -140,10 +152,43 @@ export function HomePage() {
         throw new Error(membershipsError?.message ?? "Failed to load game memberships");
       }
 
+      const { data: readiness, error: readinessError } = await supabase
+        .schema("secret_toaster")
+        .from("player_readiness")
+        .select("id, user_id, round, is_ready, updated_at")
+        .eq("game_id", gameId)
+        .eq("round", game.round)
+        .order("updated_at", { ascending: false });
+
+      if (readinessError || !readiness) {
+        throw new Error(readinessError?.message ?? "Failed to load readiness state");
+      }
+
       return {
         game: game as GameDetailsRecord,
         memberships: memberships as GameMembershipRecord[],
+        readiness: readiness as PlayerReadinessRecord[],
       };
+    },
+  });
+
+  const setReadyMutation = useMutation({
+    mutationFn: async (isReady: boolean) => {
+      if (!activeGame?.gameId) throw new Error("No active game selected");
+
+      const { data, error } = await supabase.functions.invoke("secret-toaster-set-ready", {
+        body: {
+          gameId: activeGame.gameId,
+          isReady,
+        },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["game", "details", activeGame?.gameId] });
+      void queryClient.invalidateQueries({ queryKey: ["game", "events", activeGame?.gameId] });
     },
   });
 
@@ -407,6 +452,18 @@ export function HomePage() {
           void queryClient.invalidateQueries({ queryKey: ["game", "details", activeGame.gameId] });
         },
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "secret_toaster",
+          table: "player_readiness",
+          filter: `game_id=eq.${activeGame.gameId}`,
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: ["game", "details", activeGame.gameId] });
+        },
+      )
       .subscribe();
 
     return () => {
@@ -429,6 +486,16 @@ export function HomePage() {
     if (!inviteLink) return;
     await navigator.clipboard.writeText(inviteLink);
   };
+
+  const currentUserReadiness = gameDetailsQuery.data?.readiness.find(
+    (entry) => entry.user_id === authQuery.data?.id,
+  );
+  const readyMemberIds = new Set(
+    gameDetailsQuery.data?.readiness.filter((entry) => entry.is_ready).map((entry) => entry.user_id) ?? [],
+  );
+  const activeMembersCount = gameDetailsQuery.data?.memberships.filter((member) => member.is_active).length ?? 0;
+  const readyCount = readyMemberIds.size;
+  const allReady = activeMembersCount > 0 && readyCount >= activeMembersCount;
 
   return (
     <main className="mx-auto max-w-4xl space-y-4 p-4 md:p-8">
@@ -642,12 +709,32 @@ export function HomePage() {
                   <p>
                     Members: <strong>{gameDetailsQuery.data.memberships.length}</strong>
                   </p>
+                  <p>
+                    Ready: <strong>{readyCount}</strong> / {activeMembersCount}
+                    {allReady ? " (all ready)" : ""}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant={currentUserReadiness?.is_ready ? "secondary" : "default"}
+                      disabled={setReadyMutation.isPending}
+                      onClick={() => setReadyMutation.mutate(!(currentUserReadiness?.is_ready ?? false))}
+                    >
+                      {setReadyMutation.isPending
+                        ? "Updating..."
+                        : currentUserReadiness?.is_ready
+                          ? "Set Not Ready"
+                          : "Set Ready"}
+                    </Button>
+                  </div>
+                  {setReadyMutation.isError ? <p>Ready error: {setReadyMutation.error.message}</p> : null}
                   <ul>
                     {gameDetailsQuery.data.memberships.map((member) => (
                       <li key={member.id}>
                         {shortId(member.user_id)}
                         {member.user_id === authQuery.data?.id ? " (you)" : ""} - {member.role}
                         {member.is_active ? "" : " (inactive)"}
+                        {readyMemberIds.has(member.user_id) ? " - ready" : " - not ready"}
                       </li>
                     ))}
                   </ul>
