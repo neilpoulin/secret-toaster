@@ -2,6 +2,8 @@ import { buildLegacyBoardSpec } from "@secret-toaster/domain";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 
+import { Button } from "@/components/ui/button";
+
 import { buildBoardLayout } from "./hex-layout";
 import { getHexSnapshot } from "./state";
 
@@ -249,26 +251,16 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
           {hoverHexId === null ? "Hover a hex to preview adjacency" : `Hovering #${hoverHexId}`}
         </p>
         <div className="flex items-center gap-1.5 text-xs">
-          <button
-            type="button"
-            onClick={decreaseZoom}
-            disabled={!canZoomOut}
-            className="rounded border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <Button type="button" variant="outline" size="icon-xs" onClick={decreaseZoom} disabled={!canZoomOut}>
             -
-          </button>
+          </Button>
           <span className="min-w-14 text-center font-medium">{Math.round(zoomLevel * 100)}%</span>
-          <button
-            type="button"
-            onClick={increaseZoom}
-            disabled={!canZoomIn}
-            className="rounded border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <Button type="button" variant="outline" size="icon-xs" onClick={increaseZoom} disabled={!canZoomIn}>
             +
-          </button>
-          <button type="button" onClick={resetZoom} className="rounded border px-2 py-1">
+          </Button>
+          <Button type="button" variant="outline" size="xs" onClick={resetZoom}>
             Reset
-          </button>
+          </Button>
         </div>
       </div>
       <Stage width={containerWidth} height={stageHeight}>

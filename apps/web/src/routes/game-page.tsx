@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { legacyBoardX, legacyBoardY } from "@secret-toaster/domain";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LEGACY_BOARD, GameBoardCanvas } from "@/features/board/game-board-canvas";
 import { getHexSnapshot } from "@/features/board/state";
@@ -524,10 +525,10 @@ export function GamePage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap gap-2 text-xs">
-            <span className="rounded border border-emerald-500 bg-emerald-100 px-2 py-1">Land</span>
-            <span className="rounded border border-sky-600 bg-sky-200 px-2 py-1">Keep</span>
-            <span className="rounded border border-amber-600 bg-amber-200 px-2 py-1">Castle</span>
-            <span className="rounded border bg-muted px-2 py-1">Blank</span>
+            <Badge variant="boardLand">Land</Badge>
+            <Badge variant="boardKeep">Keep</Badge>
+            <Badge variant="boardCastle">Castle</Badge>
+            <Badge variant="boardBlank">Blank</Badge>
           </div>
 
           <GameBoardCanvas
