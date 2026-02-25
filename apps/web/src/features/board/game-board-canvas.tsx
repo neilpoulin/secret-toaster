@@ -183,12 +183,36 @@ export interface GameBoardCanvasProps {
   plannedFromHexId?: number | null;
   plannedToHexId?: number | null;
   legalDestinationHexIds?: number[];
+  playerColors?: Record<string, string>;
+  playbackStep?: {
+    fromHexId: number;
+    toHexId: number;
+    playerUserId: string;
+    label: string;
+  } | null;
   onSelectHex: (hexId: number) => void;
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const normalized = hex.trim().replace("#", "");
+  if (!/^[0-9A-Fa-f]{6}$/.test(normalized)) return `rgba(255,255,255,${alpha})`;
+  const r = Number.parseInt(normalized.slice(0, 2), 16);
+  const g = Number.parseInt(normalized.slice(2, 4), 16);
+  const b = Number.parseInt(normalized.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export function GameBoardCanvas(props: GameBoardCanvasProps) {
-  const { currentState, selectedHexId, plannedFromHexId = null, plannedToHexId = null, legalDestinationHexIds, onSelectHex } =
-    props;
+  const {
+    currentState,
+    selectedHexId,
+    plannedFromHexId = null,
+    plannedToHexId = null,
+    legalDestinationHexIds,
+    playerColors = {},
+    playbackStep = null,
+    onSelectHex,
+  } = props;
   const layout = useMemo(() => buildBoardLayout({ boardSpec: LEGACY_BOARD, radius: 34, padding: 0 }), []);
   const baseHexes = useMemo(
     () =>
@@ -301,6 +325,18 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
               let tileStrokeWidth = 1.4;
               let tileOpacity = hex.type === "BLANK" ? 0.8 : 1;
 
+              const ownership = getHexSnapshot(currentState, hex.index);
+              const ownerColor = ownership?.ownerUserId ? playerColors[ownership.ownerUserId] : undefined;
+
+              if (!isPlayable) {
+                tileOpacity = hoverHexId === null ? 0.78 : 0.35;
+              } else if (ownerColor) {
+                tileFill = hexToRgba(ownerColor, 0.22);
+                tileFillOpacity = 1;
+                tileStroke = ownerColor;
+                tileStrokeWidth = 1.8;
+              }
+
               if (isNeighbor) {
                 tileFill = palette.neighborFill;
                 tileFillOpacity = 0.84;
@@ -343,10 +379,6 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
 
               if (hoverHexId !== null && !isActive && !isNeighbor) {
                 tileOpacity = hex.type === "BLANK" ? 0.42 : 0.5;
-              }
-
-              if (!isPlayable) {
-                tileOpacity = hoverHexId === null ? 0.78 : 0.35;
               }
 
               return (
@@ -408,6 +440,23 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
                   strokeWidth={3.2}
                 />
               ))}
+
+            {playbackStep
+              ? layout.hexes
+                  .filter((hex) => hex.index === playbackStep.fromHexId || hex.index === playbackStep.toHexId)
+                  .map((hex) => (
+                    <Line
+                      key={`playback-${hex.index}`}
+                      points={hex.points}
+                      closed
+                      fillEnabled={false}
+                      stroke={hex.index === playbackStep.toHexId ? "#f59e0b" : "#fb7185"}
+                      strokeWidth={3.4}
+                      shadowBlur={10}
+                      shadowColor={hex.index === playbackStep.toHexId ? "#f59e0b" : "#fb7185"}
+                    />
+                  ))
+              : null}
           </Group>
         </Layer>
 
@@ -493,6 +542,10 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
 
                   {snapshot?.ownerUserId && showOwnerLabel ? (
                     <Group>
+                      {(() => {
+                        const ownerColor = playerColors[snapshot.ownerUserId] ?? palette.ownerText;
+                        return (
+                          <>
                       <Rect
                         x={hex.cx - 31}
                         y={ownerLabelY - 2}
@@ -509,10 +562,13 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
                         align="center"
                         fontSize={9}
                         fontStyle="600"
-                        fill={palette.ownerText}
+                        fill={ownerColor}
                         opacity={textOpacity}
                         text={shortId(snapshot.ownerUserId)}
                       />
+                          </>
+                        );
+                      })()}
                     </Group>
                   ) : null}
 
@@ -568,6 +624,12 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
             })}
           </Group>
         </Layer>
+
+        {playbackStep ? (
+          <Layer listening={false}>
+            <Text x={16} y={10} fontSize={12} fill={palette.textMuted} text={`Playback: ${playbackStep.label}`} />
+          </Layer>
+        ) : null}
       </Stage>
     </div>
   );

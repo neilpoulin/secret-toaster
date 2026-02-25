@@ -68,6 +68,32 @@ interface ProfileRecord {
   display_name: string | null;
 }
 
+interface AllianceRecord {
+  id: string;
+  game_id: string;
+  name: string;
+  color_hex: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+interface PlayerAllianceRecord {
+  game_id: string;
+  user_id: string;
+  alliance_id: string | null;
+}
+
+interface ChatMessageRecord {
+  id: number;
+  game_id: string;
+  sender_user_id: string;
+  message: string;
+  message_type: "GLOBAL" | "ALLIANCE" | "DIRECT";
+  alliance_id: string | null;
+  recipient_user_id: string | null;
+  created_at: string;
+}
+
 interface CommandReplayEntry {
   sourceEventId: number;
   round: number;
@@ -159,6 +185,28 @@ function cloneProjectedState(input: Map<number, ProjectedHexState>): Map<number,
     next.set(hexId, { ...value });
   }
   return next;
+}
+
+const PLAYER_COLOR_PALETTE = [
+  "#22C55E",
+  "#0EA5E9",
+  "#F97316",
+  "#EAB308",
+  "#A855F7",
+  "#EF4444",
+  "#14B8A6",
+  "#F43F5E",
+  "#6366F1",
+  "#84CC16",
+];
+
+function buildPlayerColorMap(userIds: string[]): Record<string, string> {
+  const uniqueSorted = [...new Set(userIds)].sort();
+  const map: Record<string, string> = {};
+  uniqueSorted.forEach((userId, index) => {
+    map[userId] = PLAYER_COLOR_PALETTE[index % PLAYER_COLOR_PALETTE.length];
+  });
+  return map;
 }
 
 function ensureProjectedHex(state: Map<number, ProjectedHexState>, hexId: number): ProjectedHexState {
@@ -280,6 +328,11 @@ export function GamePage() {
   const [gameEvents, setGameEvents] = useState<GameEventRecord[]>([]);
   const [gameEventsError, setGameEventsError] = useState<string | null>(null);
   const [displayNameInput, setDisplayNameInput] = useState("");
+  const [newAllianceName, setNewAllianceName] = useState("");
+  const [newAllianceColor, setNewAllianceColor] = useState("#22C55E");
+  const [chatMessageText, setChatMessageText] = useState("");
+  const [chatMessageType, setChatMessageType] = useState<"GLOBAL" | "ALLIANCE" | "DIRECT">("GLOBAL");
+  const [chatRecipientUserId, setChatRecipientUserId] = useState<string>("");
   const [selectedHexId, setSelectedHexId] = useState<number>(LEGACY_BOARD.castleId);
   const [plannedFromHexId, setPlannedFromHexId] = useState<number | null>(null);
   const [plannedToHexId, setPlannedToHexId] = useState<number | null>(null);
@@ -287,6 +340,8 @@ export function GamePage() {
   const [activeOrderNumber, setActiveOrderNumber] = useState(1);
   const [activeActionType, setActiveActionType] = useState<OrderActionType>("move");
   const [activeTroopCount, setActiveTroopCount] = useState(1);
+  const [isCutscenePlaying, setIsCutscenePlaying] = useState(false);
+  const [cutsceneStepIndex, setCutsceneStepIndex] = useState(0);
 
   const authQuery = useQuery({
     queryKey: ["auth", "user"],
@@ -306,6 +361,8 @@ export function GamePage() {
       memberships: GameMembershipRecord[];
       readiness: PlayerReadinessRecord[];
       profiles: ProfileRecord[];
+      alliances: AllianceRecord[];
+      playerAlliances: PlayerAllianceRecord[];
     }> => {
       const [{ data: game, error: gameError }, { data: memberships, error: membershipsError }] = await Promise.all([
         supabase
@@ -353,11 +410,36 @@ export function GamePage() {
         throw new Error(profilesError?.message ?? "Failed to load player profiles");
       }
 
+      const [{ data: alliances, error: alliancesError }, { data: playerAlliances, error: playerAlliancesError }] =
+        await Promise.all([
+          supabase
+            .schema("secret_toaster")
+            .from("game_alliances")
+            .select("id, game_id, name, color_hex, created_by, created_at")
+            .eq("game_id", activeGame.gameId)
+            .order("created_at", { ascending: true }),
+          supabase
+            .schema("secret_toaster")
+            .from("game_player_alliances")
+            .select("game_id, user_id, alliance_id")
+            .eq("game_id", activeGame.gameId),
+        ]);
+
+      if (alliancesError || !alliances) {
+        throw new Error(alliancesError?.message ?? "Failed to load alliances");
+      }
+
+      if (playerAlliancesError || !playerAlliances) {
+        throw new Error(playerAlliancesError?.message ?? "Failed to load alliance memberships");
+      }
+
       return {
         game: game as GameDetailsRecord,
         memberships: memberships as GameMembershipRecord[],
         readiness: readiness as PlayerReadinessRecord[],
         profiles: profiles as ProfileRecord[],
+        alliances: alliances as AllianceRecord[],
+        playerAlliances: playerAlliances as PlayerAllianceRecord[],
       };
     },
   });
@@ -404,6 +486,84 @@ export function GamePage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["game", "details", activeGame.gameId] });
+    },
+  });
+
+  const createAllianceMutation = useMutation({
+    mutationFn: async () => {
+      const name = newAllianceName.trim();
+      if (name.length < 2) throw new Error("Alliance name must be at least 2 chars");
+
+      const { data, error } = await supabase.functions.invoke("secret-toaster-create-alliance", {
+        body: {
+          gameId: activeGame.gameId,
+          name,
+          colorHex: newAllianceColor,
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      setNewAllianceName("");
+      void queryClient.invalidateQueries({ queryKey: ["game", "details", activeGame.gameId] });
+    },
+  });
+
+  const setAllianceMutation = useMutation({
+    mutationFn: async (allianceId: string | null) => {
+      const { data, error } = await supabase.functions.invoke("secret-toaster-set-alliance", {
+        body: {
+          gameId: activeGame.gameId,
+          allianceId,
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["game", "details", activeGame.gameId] });
+    },
+  });
+
+  const chatMessagesQuery = useQuery({
+    queryKey: ["game", "chat", activeGame.gameId],
+    enabled: Boolean(activeGame.gameId && authQuery.data),
+    refetchInterval: authQuery.data ? 3000 : false,
+    queryFn: async (): Promise<ChatMessageRecord[]> => {
+      const { data, error } = await supabase
+        .schema("secret_toaster")
+        .from("chat_messages")
+        .select("id, game_id, sender_user_id, message, message_type, alliance_id, recipient_user_id, created_at")
+        .eq("game_id", activeGame.gameId)
+        .order("created_at", { ascending: true })
+        .limit(200);
+
+      if (error || !data) throw new Error(error?.message ?? "Failed to load chat messages");
+      return data as ChatMessageRecord[];
+    },
+  });
+
+  const sendChatMutation = useMutation({
+    mutationFn: async () => {
+      const message = chatMessageText.trim();
+      if (!message) throw new Error("Message is required");
+
+      const { data, error } = await supabase.functions.invoke("secret-toaster-send-chat", {
+        body: {
+          gameId: activeGame.gameId,
+          message,
+          messageType: chatMessageType,
+          recipientUserId: chatMessageType === "DIRECT" ? chatRecipientUserId || null : null,
+          allianceId: chatMessageType === "ALLIANCE" ? currentUserAllianceId ?? null : null,
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      setChatMessageText("");
+      void queryClient.invalidateQueries({ queryKey: ["game", "chat", activeGame.gameId] });
     },
   });
 
@@ -493,7 +653,7 @@ export function GamePage() {
         .select("id, event_type, payload, caused_by, created_at")
         .eq("game_id", activeGame.gameId)
         .order("created_at", { ascending: false })
-        .limit(20);
+        .limit(200);
 
       if (!eventsError && events) {
         setGameEvents(events as GameEventRecord[]);
@@ -515,7 +675,7 @@ export function GamePage() {
         },
         (payload) => {
           const next = payload.new as GameEventRecord;
-          setGameEvents((previous) => [next, ...previous].slice(0, 20));
+          setGameEvents((previous) => [next, ...previous].slice(0, 200));
         },
       )
       .subscribe();
@@ -558,6 +718,42 @@ export function GamePage() {
           void queryClient.invalidateQueries({ queryKey: ["game", "details", activeGame.gameId] });
         },
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "secret_toaster",
+          table: "chat_messages",
+          filter: `game_id=eq.${activeGame.gameId}`,
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: ["game", "chat", activeGame.gameId] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "secret_toaster",
+          table: "game_alliances",
+          filter: `game_id=eq.${activeGame.gameId}`,
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: ["game", "details", activeGame.gameId] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "secret_toaster",
+          table: "game_player_alliances",
+          filter: `game_id=eq.${activeGame.gameId}`,
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: ["game", "details", activeGame.gameId] });
+        },
+      )
       .subscribe();
 
     return () => {
@@ -589,11 +785,41 @@ export function GamePage() {
       : commandReplayEntries
           .filter((entry) => entry.round === latestExecutedRound)
           .sort((left, right) => left.executionIndex - right.executionIndex);
+  const cutsceneSteps = latestRoundReplay
+    .map((entry) => {
+      const fromHexId = asNumber(entry.commandPayload.fromHexId);
+      const toHexId = asNumber(entry.commandPayload.toHexId);
+      const actionType = asText(entry.commandPayload.actionType) ?? "move";
+      const troopCount = asNumber(entry.commandPayload.troopCount);
+      if (fromHexId === null || toHexId === null) return null;
+
+      const label =
+        actionType === "move" || actionType === "attack"
+          ? `${actionType} ${fromHexId} -> ${toHexId} (${troopCount ?? 0})`
+          : `${actionType} ${fromHexId}`;
+
+      return {
+        fromHexId,
+        toHexId,
+        playerUserId: entry.playerUserId,
+        label,
+      };
+    })
+    .filter((step): step is { fromHexId: number; toHexId: number; playerUserId: string; label: string } => step !== null);
+  const activeCutsceneStep = isCutscenePlaying && cutsceneSteps.length > 0 ? cutsceneSteps[cutsceneStepIndex] ?? null : null;
   const currentState = gameDetailsQuery.data?.game.current_state ?? {};
   const currentUserId = authQuery.data?.id ?? null;
   const currentRound = gameDetailsQuery.data?.game.round ?? 0;
   const profileByUserId = new Map((gameDetailsQuery.data?.profiles ?? []).map((profile) => [profile.user_id, profile]));
   const currentUserProfile = currentUserId ? profileByUserId.get(currentUserId) ?? null : null;
+  const alliances = gameDetailsQuery.data?.alliances ?? [];
+  const playerAlliances = gameDetailsQuery.data?.playerAlliances ?? [];
+  const playerAllianceByUserId = new Map(playerAlliances.map((membership) => [membership.user_id, membership.alliance_id]));
+  const allianceById = new Map(alliances.map((alliance) => [alliance.id, alliance]));
+  const currentUserAllianceId = currentUserId ? playerAllianceByUserId.get(currentUserId) ?? null : null;
+  const availableDirectRecipients = (gameDetailsQuery.data?.memberships ?? []).filter((member) => member.user_id !== currentUserId);
+  const playerColors = buildPlayerColorMap((gameDetailsQuery.data?.memberships ?? []).map((member) => member.user_id));
+
   const getDisplayName = (userId: string) => {
     const profile = profileByUserId.get(userId);
     const displayName = profile?.display_name?.trim();
@@ -861,6 +1087,26 @@ export function GamePage() {
     }
   }, [activeActionType, plannedFromHexId]);
 
+  useEffect(() => {
+    if (!isCutscenePlaying) return;
+    if (cutsceneSteps.length === 0) {
+      setIsCutscenePlaying(false);
+      return;
+    }
+
+    if (cutsceneStepIndex >= cutsceneSteps.length) {
+      setIsCutscenePlaying(false);
+      setCutsceneStepIndex(0);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setCutsceneStepIndex((current) => current + 1);
+    }, 1000);
+
+    return () => window.clearTimeout(timeout);
+  }, [isCutscenePlaying, cutsceneStepIndex, cutsceneSteps.length]);
+
   const handleBoardHexSelect = (hexId: number) => {
     setSelectedHexId(hexId);
 
@@ -1001,6 +1247,10 @@ export function GamePage() {
               <ul>
                 {gameDetailsQuery.data.memberships.map((member) => (
                   <li key={member.id}>
+                    <span
+                      className="mr-1 inline-block size-2 rounded-full"
+                      style={{ backgroundColor: playerColors[member.user_id] ?? "#94A3B8" }}
+                    />
                     {getDisplayName(member.user_id)}
                     {member.user_id === authQuery.data?.id ? " (you)" : ""} - {member.role}
                     {member.is_active ? "" : " (inactive)"}
@@ -1046,13 +1296,179 @@ export function GamePage() {
             <ul className="space-y-1 text-sm">
               {gameDetailsQuery.data.memberships.map((member) => (
                 <li key={member.id} className="rounded border px-2 py-1">
+                  <span
+                    className="mr-1 inline-block size-2 rounded-full"
+                    style={{ backgroundColor: playerColors[member.user_id] ?? "#94A3B8" }}
+                  />
                   <strong>{getDisplayName(member.user_id)}</strong>
                   {member.user_id === currentUserId ? " (you)" : ""}
-                  <span className="text-muted-foreground"> - {member.role}</span>
+                  <span className="text-muted-foreground">
+                    {" "}- {member.role}
+                    {playerAllianceByUserId.get(member.user_id)
+                      ? `, ${allianceById.get(playerAllianceByUserId.get(member.user_id) ?? "")?.name ?? "Alliance"}`
+                      : ""}
+                  </span>
                 </li>
               ))}
             </ul>
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Alliances</CardTitle>
+          <CardDescription>Create and join alliances for scoped chat and coordination.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              createAllianceMutation.mutate();
+            }}
+          >
+            <div className="min-w-56 flex-1 space-y-1">
+              <Label htmlFor="alliance-name">New alliance name</Label>
+              <Input
+                id="alliance-name"
+                value={newAllianceName}
+                onChange={(event) => setNewAllianceName(event.target.value)}
+                placeholder="The Toasters"
+                maxLength={40}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="alliance-color">Color</Label>
+              <Input
+                id="alliance-color"
+                type="color"
+                value={newAllianceColor}
+                onChange={(event) => setNewAllianceColor(event.target.value.toUpperCase())}
+                className="h-9 w-16"
+              />
+            </div>
+            <Button type="submit" disabled={createAllianceMutation.isPending}>
+              {createAllianceMutation.isPending ? "Creating..." : "Create alliance"}
+            </Button>
+          </form>
+          {createAllianceMutation.isError ? <p>Alliance error: {createAllianceMutation.error.message}</p> : null}
+
+          {alliances.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No alliances yet.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {alliances.map((alliance) => {
+                const memberCount = playerAlliances.filter((entry) => entry.alliance_id === alliance.id).length;
+                const inAlliance = currentUserAllianceId === alliance.id;
+                return (
+                  <li key={alliance.id} className="flex items-center justify-between rounded border p-2">
+                    <div className="flex items-center gap-2">
+                      <span className="size-3 rounded-full" style={{ backgroundColor: alliance.color_hex ?? "#94A3B8" }} />
+                      <span>
+                        <strong>{alliance.name}</strong> ({memberCount})
+                      </span>
+                    </div>
+                    <Button
+                      size="xs"
+                      variant={inAlliance ? "secondary" : "outline"}
+                      disabled={setAllianceMutation.isPending}
+                      onClick={() => setAllianceMutation.mutate(inAlliance ? null : alliance.id)}
+                    >
+                      {inAlliance ? "Leave" : "Join"}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Chat</CardTitle>
+          <CardDescription>Global, alliance, and direct messages for in-game communication.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <form
+            className="space-y-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              sendChatMutation.mutate();
+            }}
+          >
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="chat-type">Channel</Label>
+                <select
+                  id="chat-type"
+                  value={chatMessageType}
+                  onChange={(event) => setChatMessageType(event.target.value as "GLOBAL" | "ALLIANCE" | "DIRECT")}
+                  className="h-9 rounded-md border bg-background px-2 text-sm"
+                >
+                  <option value="GLOBAL">GLOBAL</option>
+                  <option value="ALLIANCE" disabled={!currentUserAllianceId}>
+                    ALLIANCE
+                  </option>
+                  <option value="DIRECT">DIRECT</option>
+                </select>
+              </div>
+
+              {chatMessageType === "DIRECT" ? (
+                <div className="space-y-1">
+                  <Label htmlFor="chat-recipient">Recipient</Label>
+                  <select
+                    id="chat-recipient"
+                    value={chatRecipientUserId}
+                    onChange={(event) => setChatRecipientUserId(event.target.value)}
+                    className="h-9 rounded-md border bg-background px-2 text-sm"
+                  >
+                    <option value="">Select player</option>
+                    {availableDirectRecipients.map((member) => (
+                      <option key={member.user_id} value={member.user_id}>
+                        {getDisplayName(member.user_id)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+            </div>
+
+            <Textarea
+              value={chatMessageText}
+              onChange={(event) => setChatMessageText(event.target.value)}
+              rows={3}
+              placeholder="Type your message..."
+            />
+            <Button type="submit" disabled={sendChatMutation.isPending}>
+              {sendChatMutation.isPending ? "Sending..." : "Send message"}
+            </Button>
+          </form>
+          {sendChatMutation.isError ? <p>Chat error: {sendChatMutation.error.message}</p> : null}
+
+          {chatMessagesQuery.isError ? <p>Chat load error: {chatMessagesQuery.error.message}</p> : null}
+          {chatMessagesQuery.data && chatMessagesQuery.data.length > 0 ? (
+            <ul className="max-h-72 space-y-1 overflow-y-auto rounded border p-2 text-sm">
+              {chatMessagesQuery.data.map((message) => {
+                const channelLabel =
+                  message.message_type === "ALLIANCE"
+                    ? `ALLIANCE:${allianceById.get(message.alliance_id ?? "")?.name ?? "unknown"}`
+                    : message.message_type === "DIRECT"
+                      ? `DIRECT:${message.recipient_user_id ? getDisplayName(message.recipient_user_id) : "unknown"}`
+                      : "GLOBAL";
+
+                return (
+                  <li key={message.id} className="rounded border px-2 py-1">
+                    <span className="text-xs text-muted-foreground">[{channelLabel}]</span>{" "}
+                    <strong>{getDisplayName(message.sender_user_id)}:</strong> {message.message}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">No chat messages yet.</p>
+          )}
         </CardContent>
       </Card>
 
@@ -1201,6 +1617,8 @@ export function GamePage() {
             plannedFromHexId={plannedFromHexId}
             plannedToHexId={plannedToHexId}
             legalDestinationHexIds={plannedFromHexId === null ? undefined : legalDestinationHexIds}
+            playerColors={playerColors}
+            playbackStep={activeCutsceneStep}
             onSelectHex={handleBoardHexSelect}
           />
 
@@ -1384,6 +1802,34 @@ export function GamePage() {
           {latestExecutedRound === null ? <p>No executed rounds yet.</p> : null}
           {latestExecutedRound !== null ? (
             <>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="xs"
+                  disabled={cutsceneSteps.length === 0}
+                  onClick={() => {
+                    setCutsceneStepIndex(0);
+                    setIsCutscenePlaying(true);
+                  }}
+                >
+                  Play round cutscene
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={!isCutscenePlaying}
+                  onClick={() => setIsCutscenePlaying(false)}
+                >
+                  Pause
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {isCutscenePlaying
+                    ? `Step ${Math.min(cutsceneStepIndex + 1, cutsceneSteps.length)} / ${cutsceneSteps.length}`
+                    : "Playback paused"}
+                </span>
+              </div>
+
               <p>
                 Latest executed round: <strong>{latestExecutedRound}</strong>
               </p>
