@@ -187,6 +187,16 @@ export interface GameBoardCanvasProps {
 export function GameBoardCanvas(props: GameBoardCanvasProps) {
   const { currentState, selectedHexId, plannedFromHexId = null, plannedToHexId = null, onSelectHex } = props;
   const layout = useMemo(() => buildBoardLayout({ boardSpec: LEGACY_BOARD, radius: 34, padding: 0 }), []);
+  const baseHexes = useMemo(
+    () =>
+      [...layout.hexes].sort((left, right) => {
+        const leftPriority = left.type === "BLANK" ? 1 : 0;
+        const rightPriority = right.type === "BLANK" ? 1 : 0;
+        if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+        return left.index - right.index;
+      }),
+    [layout.hexes],
+  );
   const hexByIndex = useMemo(() => new Map(layout.hexes.map((hex) => [hex.index, hex])), [layout.hexes]);
   const isPlayableHex = (hexIndex: number): boolean => {
     const hex = hexByIndex.get(hexIndex);
@@ -270,7 +280,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
 
         <Layer>
           <Group x={groupX} scaleX={scale} scaleY={scale}>
-            {layout.hexes.map((hex) => {
+            {baseHexes.map((hex) => {
               const style = hexStyle(hex.type, palette);
               const isPlayable = hex.type !== "BLANK";
               const isNeighbor = neighborHexSet.has(hex.index);
