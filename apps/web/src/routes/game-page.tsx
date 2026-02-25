@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { validateCommandPayload } from "@secret-toaster/contracts";
+import { type OrderActionType, validateCommandPayload } from "@secret-toaster/contracts";
 import { legacyBoardX, legacyBoardY } from "@secret-toaster/domain";
 
 import { Button } from "@/components/ui/button";
@@ -63,6 +63,11 @@ interface PlayerReadinessRecord {
   updated_at: string;
 }
 
+interface ProfileRecord {
+  user_id: string;
+  display_name: string | null;
+}
+
 interface CommandReplayEntry {
   sourceEventId: number;
   round: number;
@@ -79,7 +84,14 @@ type PlannedOrder = {
   orderNumber: number;
   fromHexId: number;
   toHexId: number;
+  actionType: OrderActionType;
+  troopCount?: number;
+};
+
+type ProjectedHexState = {
+  ownerUserId: string | null;
   troopCount: number;
+  knightCount: number;
 };
 
 function shortId(value: string): string {
@@ -110,21 +122,104 @@ function parsePlannedOrder(payload: Record<string, unknown>): PlannedOrder | nul
   const orderNumber = asNumber(payload.orderNumber);
   const fromHexId = asNumber(payload.fromHexId);
   const toHexId = asNumber(payload.toHexId);
+  const actionTypeRaw = asText(payload.actionType) ?? "move";
+  const actionType: OrderActionType =
+    actionTypeRaw === "move" || actionTypeRaw === "attack" || actionTypeRaw === "fortify" || actionTypeRaw === "promote"
+      ? actionTypeRaw
+      : "move";
   const troopCount = asNumber(payload.troopCount);
 
-  if (orderNumber === null || fromHexId === null || toHexId === null || troopCount === null) return null;
-  if (!Number.isInteger(orderNumber) || !Number.isInteger(fromHexId) || !Number.isInteger(toHexId) || !Number.isInteger(troopCount)) {
+  if (orderNumber === null || fromHexId === null || toHexId === null) return null;
+  if (!Number.isInteger(orderNumber) || !Number.isInteger(fromHexId) || !Number.isInteger(toHexId)) {
     return null;
   }
   if (orderNumber < 1 || orderNumber > 3) return null;
-  if (troopCount < 1) return null;
+
+  const normalizedTroopCount =
+    actionType === "move" || actionType === "attack"
+      ? Number.isInteger(troopCount) && (troopCount ?? 0) > 0
+        ? troopCount
+        : null
+      : undefined;
+
+  if ((actionType === "move" || actionType === "attack") && normalizedTroopCount === null) return null;
 
   return {
     orderNumber,
     fromHexId,
     toHexId,
-    troopCount,
+    actionType,
+    troopCount: normalizedTroopCount ?? undefined,
   };
+}
+
+function cloneProjectedState(input: Map<number, ProjectedHexState>): Map<number, ProjectedHexState> {
+  const next = new Map<number, ProjectedHexState>();
+  for (const [hexId, value] of input.entries()) {
+    next.set(hexId, { ...value });
+  }
+  return next;
+}
+
+function ensureProjectedHex(state: Map<number, ProjectedHexState>, hexId: number): ProjectedHexState {
+  const existing = state.get(hexId);
+  if (existing) return existing;
+
+  const created: ProjectedHexState = {
+    ownerUserId: null,
+    troopCount: 0,
+    knightCount: 0,
+  };
+  state.set(hexId, created);
+  return created;
+}
+
+function applyProjectedOrderMove(state: Map<number, ProjectedHexState>, order: PlannedOrder, playerUserId: string | null) {
+  if (!playerUserId) return;
+
+  const fromHex = ensureProjectedHex(state, order.fromHexId);
+  const toHex = ensureProjectedHex(state, order.toHexId);
+
+  if (fromHex.ownerUserId !== playerUserId) return;
+
+  if (order.actionType === "fortify") {
+    fromHex.troopCount += 200;
+    return;
+  }
+
+  if (order.actionType === "promote") {
+    if (fromHex.troopCount >= 100) {
+      fromHex.troopCount -= 100;
+      fromHex.knightCount += 1;
+    }
+    return;
+  }
+
+  if (fromHex.troopCount <= 0) return;
+  const requested = order.troopCount ?? 0;
+  if (requested <= 0) return;
+
+  const movedTroops = Math.max(0, Math.min(requested, fromHex.troopCount));
+  if (movedTroops <= 0) return;
+
+  fromHex.troopCount -= movedTroops;
+
+  if (order.actionType === "attack") {
+    const defendingTroops = Math.max(0, toHex.troopCount);
+    if (movedTroops > defendingTroops) {
+      toHex.ownerUserId = playerUserId;
+      toHex.troopCount = movedTroops - defendingTroops;
+    } else {
+      toHex.troopCount = defendingTroops - movedTroops;
+      if (toHex.troopCount === 0 && toHex.ownerUserId !== playerUserId) {
+        toHex.ownerUserId = null;
+      }
+    }
+    return;
+  }
+
+  toHex.ownerUserId = playerUserId;
+  toHex.troopCount += movedTroops;
 }
 
 function getCommandReplayEntries(events: GameEventRecord[]): CommandReplayEntry[] {
@@ -180,15 +275,17 @@ export function GamePage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [generatedInvite, setGeneratedInvite] = useState<CreateInviteResponse | null>(null);
   const [commandType, setCommandType] = useState("order.submit");
-  const [commandPayloadText, setCommandPayloadText] = useState('{"orderNumber":1,"troopCount":1}');
+  const [commandPayloadText, setCommandPayloadText] = useState('{"orderNumber":1,"actionType":"move","troopCount":1}');
   const [lastCommandAck, setLastCommandAck] = useState<ApplyCommandResponse | null>(null);
   const [gameEvents, setGameEvents] = useState<GameEventRecord[]>([]);
   const [gameEventsError, setGameEventsError] = useState<string | null>(null);
+  const [displayNameInput, setDisplayNameInput] = useState("");
   const [selectedHexId, setSelectedHexId] = useState<number>(LEGACY_BOARD.castleId);
   const [plannedFromHexId, setPlannedFromHexId] = useState<number | null>(null);
   const [plannedToHexId, setPlannedToHexId] = useState<number | null>(null);
   const [boardInteractionMode, setBoardInteractionMode] = useState<BoardInteractionMode>("inspect");
   const [activeOrderNumber, setActiveOrderNumber] = useState(1);
+  const [activeActionType, setActiveActionType] = useState<OrderActionType>("move");
   const [activeTroopCount, setActiveTroopCount] = useState(1);
 
   const authQuery = useQuery({
@@ -208,6 +305,7 @@ export function GamePage() {
       game: GameDetailsRecord;
       memberships: GameMembershipRecord[];
       readiness: PlayerReadinessRecord[];
+      profiles: ProfileRecord[];
     }> => {
       const [{ data: game, error: gameError }, { data: memberships, error: membershipsError }] = await Promise.all([
         supabase
@@ -244,10 +342,22 @@ export function GamePage() {
         throw new Error(readinessError?.message ?? "Failed to load readiness state");
       }
 
+      const memberUserIds = [...new Set(memberships.map((member) => member.user_id))];
+      const { data: profiles, error: profilesError } = await supabase
+        .schema("core")
+        .from("profiles")
+        .select("user_id, display_name")
+        .in("user_id", memberUserIds);
+
+      if (profilesError || !profiles) {
+        throw new Error(profilesError?.message ?? "Failed to load player profiles");
+      }
+
       return {
         game: game as GameDetailsRecord,
         memberships: memberships as GameMembershipRecord[],
         readiness: readiness as PlayerReadinessRecord[],
+        profiles: profiles as ProfileRecord[],
       };
     },
   });
@@ -273,6 +383,27 @@ export function GamePage() {
     },
     onSuccess: (payload) => {
       setGeneratedInvite(payload);
+    },
+  });
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async () => {
+      const userId = authQuery.data?.id;
+      if (!userId) throw new Error("Not signed in");
+
+      const displayName = displayNameInput.trim();
+      const { error } = await supabase.schema("core").from("profiles").upsert(
+        {
+          user_id: userId,
+          display_name: displayName.length > 0 ? displayName : null,
+        },
+        { onConflict: "user_id" },
+      );
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["game", "details", activeGame.gameId] });
     },
   });
 
@@ -461,6 +592,19 @@ export function GamePage() {
   const currentState = gameDetailsQuery.data?.game.current_state ?? {};
   const currentUserId = authQuery.data?.id ?? null;
   const currentRound = gameDetailsQuery.data?.game.round ?? 0;
+  const profileByUserId = new Map((gameDetailsQuery.data?.profiles ?? []).map((profile) => [profile.user_id, profile]));
+  const currentUserProfile = currentUserId ? profileByUserId.get(currentUserId) ?? null : null;
+  const getDisplayName = (userId: string) => {
+    const profile = profileByUserId.get(userId);
+    const displayName = profile?.display_name?.trim();
+    if (displayName) return displayName;
+    return shortId(userId);
+  };
+
+  useEffect(() => {
+    const nextValue = currentUserProfile?.display_name ?? "";
+    setDisplayNameInput((current) => (current === nextValue ? current : nextValue));
+  }, [currentUserProfile?.display_name]);
 
   const issuedOrdersByNumber = useMemo(() => {
     const orders = new Map<number, PlannedOrder>();
@@ -491,8 +635,43 @@ export function GamePage() {
     return orders;
   }, [currentRound, currentUserId, gameEvents]);
 
+  const projectedStateBeforeActiveOrder = useMemo(() => {
+    const projected = new Map<number, ProjectedHexState>();
+
+    for (const hex of LEGACY_BOARD.hexes) {
+      const snapshot = getHexSnapshot(currentState, hex.index);
+      if (!snapshot) continue;
+      projected.set(hex.index, {
+        ownerUserId: snapshot.ownerUserId,
+        troopCount: snapshot.troopCount ?? 0,
+        knightCount: snapshot.knightCount ?? 0,
+      });
+    }
+
+    for (let orderNumber = 1; orderNumber < activeOrderNumber; orderNumber += 1) {
+      const issued = issuedOrdersByNumber.get(orderNumber);
+      if (!issued) continue;
+      applyProjectedOrderMove(projected, issued, currentUserId);
+    }
+
+    return projected;
+  }, [activeOrderNumber, currentState, currentUserId, issuedOrdersByNumber]);
+
+  const projectedHexSnapshot = (hexId: number): ProjectedHexState | null => {
+    const projected = projectedStateBeforeActiveOrder.get(hexId);
+    if (projected) return projected;
+    const snapshot = getHexSnapshot(currentState, hexId);
+    if (!snapshot) return null;
+    return {
+      ownerUserId: snapshot.ownerUserId,
+      troopCount: snapshot.troopCount ?? 0,
+      knightCount: snapshot.knightCount ?? 0,
+    };
+  };
+
   const selectedHex = LEGACY_BOARD.hexes[selectedHexId] ?? null;
   const selectedHexSnapshot = selectedHex ? getHexSnapshot(currentState, selectedHex.index) : null;
+  const selectedProjectedSnapshot = selectedHex ? projectedHexSnapshot(selectedHex.index) : null;
   const selectedHexNeighbors =
     selectedHex?.neighbors.filter((neighbor): neighbor is number => neighbor !== null) ?? [];
 
@@ -504,7 +683,7 @@ export function GamePage() {
       : LEGACY_BOARD.hexes
           .filter((hex) => hex.type !== "BLANK")
           .map((hex) => {
-            const snapshot = getHexSnapshot(currentState, hex.index);
+            const snapshot = projectedHexSnapshot(hex.index);
             const ownedByCurrentUser = Boolean(currentUserId && snapshot?.ownerUserId === currentUserId);
             const hasUnits = (snapshot?.troopCount ?? 0) > 0 || (snapshot?.knightCount ?? 0) > 0;
             return ownedByCurrentUser && hasUnits ? hex.index : null;
@@ -512,9 +691,12 @@ export function GamePage() {
           .filter((hexId): hexId is number => hexId !== null);
 
   const legalStartHexIdSet = new Set<number>(legalStartHexIds);
+  const selfTargetAction = activeActionType === "fortify" || activeActionType === "promote";
   const legalDestinationHexIds =
     plannedFromHexId === null
       ? []
+      : selfTargetAction
+        ? [plannedFromHexId]
       : (LEGACY_BOARD.hexes[plannedFromHexId]?.neighbors
           .filter((neighbor): neighbor is number => {
             if (neighbor === null) return false;
@@ -523,10 +705,40 @@ export function GamePage() {
           }) ?? []);
   const legalDestinationHexIdSet = new Set<number>(legalDestinationHexIds);
   const selectedIsReachableFromPlannedStart = legalDestinationHexIdSet.has(selectedHexId);
-  const plannedFromSnapshot = plannedFromHexId === null ? null : getHexSnapshot(currentState, plannedFromHexId);
+  const plannedFromSnapshot = plannedFromHexId === null ? null : projectedHexSnapshot(plannedFromHexId);
   const maxTroopsForPlannedStart = Math.max(1, plannedFromSnapshot?.troopCount ?? 1);
 
-  const updateCommandPayloadOrderFields = (fromHexId: number | null, toHexId: number | null, troopCount: number) => {
+  const projectedAfterActiveOrder = useMemo(() => {
+    const next = cloneProjectedState(projectedStateBeforeActiveOrder);
+    if (plannedFromHexId === null || plannedToHexId === null) return next;
+
+    applyProjectedOrderMove(
+      next,
+      {
+        orderNumber: activeOrderNumber,
+        fromHexId: plannedFromHexId,
+        toHexId: plannedToHexId,
+        actionType: activeActionType,
+        troopCount: activeTroopCount,
+      },
+      currentUserId,
+    );
+
+    return next;
+  }, [activeOrderNumber, activeTroopCount, currentUserId, plannedFromHexId, plannedToHexId, projectedStateBeforeActiveOrder]);
+
+  const selectedProjectedAfterActiveOrder = selectedHex ? projectedAfterActiveOrder.get(selectedHex.index) ?? null : null;
+  const canSubmitPlannedOrder = plannedFromHexId !== null && plannedToHexId !== null;
+  const orderedQueuedOrders = [1, 2, 3]
+    .map((slot) => issuedOrdersByNumber.get(slot) ?? null)
+    .filter((order): order is PlannedOrder => order !== null);
+
+  const updateCommandPayloadOrderFields = (
+    fromHexId: number | null,
+    toHexId: number | null,
+    troopCount: number,
+    actionType: OrderActionType,
+  ) => {
     let parsed: Record<string, unknown> = {};
     try {
       parsed = JSON.parse(commandPayloadText) as Record<string, unknown>;
@@ -547,7 +759,12 @@ export function GamePage() {
       nextPayload.toHexId = toHexId;
     }
 
-    nextPayload.troopCount = Math.max(1, Math.floor(troopCount));
+    nextPayload.actionType = actionType;
+    if (actionType === "move" || actionType === "attack") {
+      nextPayload.troopCount = Math.max(1, Math.floor(troopCount));
+    } else {
+      delete nextPayload.troopCount;
+    }
 
     nextPayload.orderNumber = activeOrderNumber;
 
@@ -558,11 +775,19 @@ export function GamePage() {
     if (!legalStartHexIdSet.has(selectedHexId)) return;
     const nextStart = selectedHexId;
     setPlannedFromHexId(nextStart);
+
+    if (selfTargetAction) {
+      setPlannedToHexId(nextStart);
+      updateCommandPayloadOrderFields(nextStart, nextStart, activeTroopCount, activeActionType);
+      setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
+      return;
+    }
+
     setPlannedToHexId((currentTo) => {
       const isCurrentStillReachable =
         currentTo === null ? true : LEGACY_BOARD.hexes[nextStart]?.neighbors.some((neighbor) => neighbor === currentTo) ?? false;
       const nextTo = isCurrentStillReachable ? currentTo : null;
-      updateCommandPayloadOrderFields(nextStart, nextTo, activeTroopCount);
+      updateCommandPayloadOrderFields(nextStart, nextTo, activeTroopCount, activeActionType);
       return nextTo;
     });
     setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
@@ -570,18 +795,25 @@ export function GamePage() {
 
   const setSelectedAsOrderDestination = () => {
     if (plannedFromHexId === null) return;
+
+     if (selfTargetAction) {
+      setPlannedToHexId(plannedFromHexId);
+      updateCommandPayloadOrderFields(plannedFromHexId, plannedFromHexId, activeTroopCount, activeActionType);
+      return;
+    }
+
     const isReachable = legalDestinationHexIdSet.has(selectedHexId);
     if (!isReachable) return;
 
     setPlannedToHexId(selectedHexId);
-    updateCommandPayloadOrderFields(plannedFromHexId, selectedHexId, activeTroopCount);
+    updateCommandPayloadOrderFields(plannedFromHexId, selectedHexId, activeTroopCount, activeActionType);
     setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
   };
 
   const clearPlannedOrder = () => {
     setPlannedFromHexId(null);
     setPlannedToHexId(null);
-    updateCommandPayloadOrderFields(null, null, activeTroopCount);
+    updateCommandPayloadOrderFields(null, null, activeTroopCount, activeActionType);
   };
 
   useEffect(() => {
@@ -589,30 +821,45 @@ export function GamePage() {
     if (issued) {
       setPlannedFromHexId(issued.fromHexId);
       setPlannedToHexId(issued.toHexId);
-      setActiveTroopCount(issued.troopCount);
-      updateCommandPayloadOrderFields(issued.fromHexId, issued.toHexId, issued.troopCount);
+      setActiveTroopCount(issued.troopCount ?? 1);
+      setActiveActionType(issued.actionType);
+      updateCommandPayloadOrderFields(issued.fromHexId, issued.toHexId, issued.troopCount ?? activeTroopCount, issued.actionType);
       return;
     }
 
     if (projectedStartFromPreviousOrder !== null) {
       setPlannedFromHexId(projectedStartFromPreviousOrder);
       setPlannedToHexId(null);
-      updateCommandPayloadOrderFields(projectedStartFromPreviousOrder, null, activeTroopCount);
+      updateCommandPayloadOrderFields(projectedStartFromPreviousOrder, null, activeTroopCount, activeActionType);
       return;
     }
 
     setPlannedFromHexId(null);
     setPlannedToHexId(null);
-    updateCommandPayloadOrderFields(null, null, activeTroopCount);
+    updateCommandPayloadOrderFields(null, null, activeTroopCount, activeActionType);
   }, [activeOrderNumber, issuedOrdersByNumber, projectedStartFromPreviousOrder]);
 
   useEffect(() => {
-    updateCommandPayloadOrderFields(plannedFromHexId, plannedToHexId, activeTroopCount);
-  }, [activeTroopCount]);
+    updateCommandPayloadOrderFields(plannedFromHexId, plannedToHexId, activeTroopCount, activeActionType);
+  }, [activeTroopCount, activeActionType]);
 
   useEffect(() => {
     setActiveTroopCount((current) => Math.max(1, Math.min(current, maxTroopsForPlannedStart)));
   }, [maxTroopsForPlannedStart]);
+
+  useEffect(() => {
+    if (plannedFromHexId === null) return;
+    if (selfTargetAction) {
+      setPlannedToHexId(plannedFromHexId);
+      updateCommandPayloadOrderFields(plannedFromHexId, plannedFromHexId, activeTroopCount, activeActionType);
+      return;
+    }
+
+    if (plannedToHexId === plannedFromHexId) {
+      setPlannedToHexId(null);
+      updateCommandPayloadOrderFields(plannedFromHexId, null, activeTroopCount, activeActionType);
+    }
+  }, [activeActionType, plannedFromHexId]);
 
   const handleBoardHexSelect = (hexId: number) => {
     setSelectedHexId(hexId);
@@ -622,8 +869,13 @@ export function GamePage() {
     if (plannedFromHexId === null) {
       if (!legalStartHexIdSet.has(hexId)) return;
       setPlannedFromHexId(hexId);
-      setPlannedToHexId(null);
-      updateCommandPayloadOrderFields(hexId, null, activeTroopCount);
+      if (selfTargetAction) {
+        setPlannedToHexId(hexId);
+        updateCommandPayloadOrderFields(hexId, hexId, activeTroopCount, activeActionType);
+      } else {
+        setPlannedToHexId(null);
+        updateCommandPayloadOrderFields(hexId, null, activeTroopCount, activeActionType);
+      }
       setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
       return;
     }
@@ -635,15 +887,20 @@ export function GamePage() {
 
     if (legalDestinationHexIdSet.has(hexId)) {
       setPlannedToHexId(hexId);
-      updateCommandPayloadOrderFields(plannedFromHexId, hexId, activeTroopCount);
+      updateCommandPayloadOrderFields(plannedFromHexId, hexId, activeTroopCount, activeActionType);
       setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
       return;
     }
 
     if (legalStartHexIdSet.has(hexId)) {
       setPlannedFromHexId(hexId);
-      setPlannedToHexId(null);
-      updateCommandPayloadOrderFields(hexId, null, activeTroopCount);
+      if (selfTargetAction) {
+        setPlannedToHexId(hexId);
+        updateCommandPayloadOrderFields(hexId, hexId, activeTroopCount, activeActionType);
+      } else {
+        setPlannedToHexId(null);
+        updateCommandPayloadOrderFields(hexId, null, activeTroopCount, activeActionType);
+      }
       setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
     }
   };
@@ -651,6 +908,15 @@ export function GamePage() {
   const copyInviteLink = async () => {
     if (!inviteLink) return;
     await navigator.clipboard.writeText(inviteLink);
+  };
+
+  const savePlannedOrder = async (advanceToNextSlot: boolean) => {
+    if (!canSubmitPlannedOrder || applyCommandMutation.isPending) return;
+
+    const response = await applyCommandMutation.mutateAsync();
+    if (advanceToNextSlot && response.accepted && activeOrderNumber < 3) {
+      setActiveOrderNumber((current) => Math.min(3, current + 1));
+    }
   };
 
   if (!authQuery.data && !authQuery.isLoading) {
@@ -735,7 +1001,7 @@ export function GamePage() {
               <ul>
                 {gameDetailsQuery.data.memberships.map((member) => (
                   <li key={member.id}>
-                    {shortId(member.user_id)}
+                    {getDisplayName(member.user_id)}
                     {member.user_id === authQuery.data?.id ? " (you)" : ""} - {member.role}
                     {member.is_active ? "" : " (inactive)"}
                     {readyMemberIds.has(member.user_id) ? " - ready" : " - not ready"}
@@ -743,6 +1009,49 @@ export function GamePage() {
                 ))}
               </ul>
             </>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Players</CardTitle>
+          <CardDescription>Manage your profile and view current players in this game.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              updateProfileMutation.mutate();
+            }}
+          >
+            <div className="min-w-56 flex-1 space-y-1">
+              <Label htmlFor="display-name">Display name</Label>
+              <Input
+                id="display-name"
+                value={displayNameInput}
+                onChange={(event) => setDisplayNameInput(event.target.value)}
+                placeholder="Commander Toast"
+                maxLength={40}
+              />
+            </div>
+            <Button type="submit" disabled={updateProfileMutation.isPending}>
+              {updateProfileMutation.isPending ? "Saving..." : "Save display name"}
+            </Button>
+          </form>
+          {updateProfileMutation.isError ? <p>Profile error: {updateProfileMutation.error.message}</p> : null}
+
+          {gameDetailsQuery.data ? (
+            <ul className="space-y-1 text-sm">
+              {gameDetailsQuery.data.memberships.map((member) => (
+                <li key={member.id} className="rounded border px-2 py-1">
+                  <strong>{getDisplayName(member.user_id)}</strong>
+                  {member.user_id === currentUserId ? " (you)" : ""}
+                  <span className="text-muted-foreground"> - {member.role}</span>
+                </li>
+              ))}
+            </ul>
           ) : null}
         </CardContent>
       </Card>
@@ -808,6 +1117,22 @@ export function GamePage() {
                 : "Order 1 starts from your currently owned hexes with units"}
             </span>
             <div className="flex items-center gap-2">
+              <Label htmlFor="order-action-type" className="text-xs text-muted-foreground">
+                Action
+              </Label>
+              <select
+                id="order-action-type"
+                value={activeActionType}
+                onChange={(event) => setActiveActionType(event.target.value as OrderActionType)}
+                className="h-7 rounded-md border bg-background px-2 text-xs"
+              >
+                <option value="move">move</option>
+                <option value="attack">attack</option>
+                <option value="fortify">fortify</option>
+                <option value="promote">promote</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
               <Label htmlFor="order-troop-count" className="text-xs text-muted-foreground">
                 Troops
               </Label>
@@ -817,6 +1142,7 @@ export function GamePage() {
                 min={1}
                 max={maxTroopsForPlannedStart}
                 value={activeTroopCount}
+                disabled={activeActionType === "fortify" || activeActionType === "promote"}
                 onChange={(event) => {
                   const next = Number(event.target.value);
                   if (!Number.isFinite(next)) return;
@@ -825,6 +1151,48 @@ export function GamePage() {
                 className="h-7 w-24"
               />
             </div>
+            <Button
+              type="button"
+              size="xs"
+              disabled={!canSubmitPlannedOrder || applyCommandMutation.isPending}
+              onClick={() => {
+                void savePlannedOrder(false);
+              }}
+            >
+              {applyCommandMutation.isPending ? "Saving..." : "Save order"}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="secondary"
+              disabled={!canSubmitPlannedOrder || applyCommandMutation.isPending || activeOrderNumber >= 3}
+              onClick={() => {
+                void savePlannedOrder(true);
+              }}
+            >
+              Save + next order
+            </Button>
+          </div>
+
+          <div className="rounded-md border bg-card p-3 text-xs">
+            <p className="font-medium">Queued orders this round</p>
+            {orderedQueuedOrders.length === 0 ? (
+              <p className="text-muted-foreground">No orders saved yet.</p>
+            ) : (
+              <ul className="mt-1 space-y-1">
+                {orderedQueuedOrders.map((order) => (
+                  <li key={order.orderNumber} className="flex items-center justify-between gap-2 rounded border px-2 py-1">
+                    <span>
+                      #{order.orderNumber} {order.actionType} {order.fromHexId} -&gt; {order.toHexId}
+                      {order.troopCount ? ` (${order.troopCount} troops)` : ""}
+                    </span>
+                    <Button size="xs" variant="outline" onClick={() => setActiveOrderNumber(order.orderNumber)}>
+                      Edit
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <GameBoardCanvas
@@ -849,6 +1217,16 @@ export function GamePage() {
               <p>
                 Owner: <strong>{selectedHexSnapshot?.ownerUserId ? shortId(selectedHexSnapshot.ownerUserId) : "none"}</strong>
               </p>
+              <p className="text-muted-foreground">
+                Projected before order {activeOrderNumber}: troops <strong>{selectedProjectedSnapshot?.troopCount ?? 0}</strong>, owner{" "}
+                <strong>{selectedProjectedSnapshot?.ownerUserId ? shortId(selectedProjectedSnapshot.ownerUserId) : "none"}</strong>
+              </p>
+              <p className="text-muted-foreground">
+                Projected after order {activeOrderNumber}: troops <strong>{selectedProjectedAfterActiveOrder?.troopCount ?? 0}</strong>, owner{" "}
+                <strong>
+                  {selectedProjectedAfterActiveOrder?.ownerUserId ? shortId(selectedProjectedAfterActiveOrder.ownerUserId) : "none"}
+                </strong>
+              </p>
               <p>
                 Neighbors:{" "}
                 <strong>
@@ -869,17 +1247,18 @@ export function GamePage() {
                   type="button"
                   size="xs"
                   variant="secondary"
-                  disabled={plannedFromHexId === null || !selectedIsReachableFromPlannedStart}
+                  disabled={plannedFromHexId === null || (!selfTargetAction && !selectedIsReachableFromPlannedStart)}
                   onClick={setSelectedAsOrderDestination}
                 >
-                  Set as destination
+                  {selfTargetAction ? "Use same hex" : "Set as destination"}
                 </Button>
                 <Button type="button" size="xs" variant="outline" onClick={clearPlannedOrder}>
                   Clear planned order
                 </Button>
               </div>
               <p className="mt-2 text-muted-foreground">
-                Planned order {activeOrderNumber}: from {plannedFromHexId ?? "-"} to {plannedToHexId ?? "-"} with {activeTroopCount} troops
+                Planned order {activeOrderNumber}: {activeActionType} from {plannedFromHexId ?? "-"} to {plannedToHexId ?? "-"}
+                {activeActionType === "move" || activeActionType === "attack" ? ` with ${activeTroopCount} troops` : ""}
               </p>
             </div>
           ) : null}
