@@ -17,6 +17,7 @@ export const OrderSubmitPayloadSchema = z
     orderNumber: z.number().int().min(1).max(3),
     fromHexId: z.number().int().min(0).max(LEGACY_HEX_ID_MAX),
     toHexId: z.number().int().min(0).max(LEGACY_HEX_ID_MAX),
+    troopCount: z.number().int().min(1),
   })
   .strict();
 

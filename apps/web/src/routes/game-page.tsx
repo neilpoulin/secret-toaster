@@ -79,6 +79,7 @@ type PlannedOrder = {
   orderNumber: number;
   fromHexId: number;
   toHexId: number;
+  troopCount: number;
 };
 
 function shortId(value: string): string {
@@ -109,15 +110,20 @@ function parsePlannedOrder(payload: Record<string, unknown>): PlannedOrder | nul
   const orderNumber = asNumber(payload.orderNumber);
   const fromHexId = asNumber(payload.fromHexId);
   const toHexId = asNumber(payload.toHexId);
+  const troopCount = asNumber(payload.troopCount);
 
-  if (orderNumber === null || fromHexId === null || toHexId === null) return null;
-  if (!Number.isInteger(orderNumber) || !Number.isInteger(fromHexId) || !Number.isInteger(toHexId)) return null;
+  if (orderNumber === null || fromHexId === null || toHexId === null || troopCount === null) return null;
+  if (!Number.isInteger(orderNumber) || !Number.isInteger(fromHexId) || !Number.isInteger(toHexId) || !Number.isInteger(troopCount)) {
+    return null;
+  }
   if (orderNumber < 1 || orderNumber > 3) return null;
+  if (troopCount < 1) return null;
 
   return {
     orderNumber,
     fromHexId,
     toHexId,
+    troopCount,
   };
 }
 
@@ -174,7 +180,7 @@ export function GamePage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [generatedInvite, setGeneratedInvite] = useState<CreateInviteResponse | null>(null);
   const [commandType, setCommandType] = useState("order.submit");
-  const [commandPayloadText, setCommandPayloadText] = useState('{"orderNumber":1}');
+  const [commandPayloadText, setCommandPayloadText] = useState('{"orderNumber":1,"troopCount":1}');
   const [lastCommandAck, setLastCommandAck] = useState<ApplyCommandResponse | null>(null);
   const [gameEvents, setGameEvents] = useState<GameEventRecord[]>([]);
   const [gameEventsError, setGameEventsError] = useState<string | null>(null);
@@ -183,6 +189,7 @@ export function GamePage() {
   const [plannedToHexId, setPlannedToHexId] = useState<number | null>(null);
   const [boardInteractionMode, setBoardInteractionMode] = useState<BoardInteractionMode>("inspect");
   const [activeOrderNumber, setActiveOrderNumber] = useState(1);
+  const [activeTroopCount, setActiveTroopCount] = useState(1);
 
   const authQuery = useQuery({
     queryKey: ["auth", "user"],
@@ -516,8 +523,10 @@ export function GamePage() {
           }) ?? []);
   const legalDestinationHexIdSet = new Set<number>(legalDestinationHexIds);
   const selectedIsReachableFromPlannedStart = legalDestinationHexIdSet.has(selectedHexId);
+  const plannedFromSnapshot = plannedFromHexId === null ? null : getHexSnapshot(currentState, plannedFromHexId);
+  const maxTroopsForPlannedStart = Math.max(1, plannedFromSnapshot?.troopCount ?? 1);
 
-  const updateCommandPayloadOrderFields = (fromHexId: number | null, toHexId: number | null) => {
+  const updateCommandPayloadOrderFields = (fromHexId: number | null, toHexId: number | null, troopCount: number) => {
     let parsed: Record<string, unknown> = {};
     try {
       parsed = JSON.parse(commandPayloadText) as Record<string, unknown>;
@@ -538,6 +547,8 @@ export function GamePage() {
       nextPayload.toHexId = toHexId;
     }
 
+    nextPayload.troopCount = Math.max(1, Math.floor(troopCount));
+
     nextPayload.orderNumber = activeOrderNumber;
 
     setCommandPayloadText(JSON.stringify(nextPayload, null, 2));
@@ -551,7 +562,7 @@ export function GamePage() {
       const isCurrentStillReachable =
         currentTo === null ? true : LEGACY_BOARD.hexes[nextStart]?.neighbors.some((neighbor) => neighbor === currentTo) ?? false;
       const nextTo = isCurrentStillReachable ? currentTo : null;
-      updateCommandPayloadOrderFields(nextStart, nextTo);
+      updateCommandPayloadOrderFields(nextStart, nextTo, activeTroopCount);
       return nextTo;
     });
     setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
@@ -563,14 +574,14 @@ export function GamePage() {
     if (!isReachable) return;
 
     setPlannedToHexId(selectedHexId);
-    updateCommandPayloadOrderFields(plannedFromHexId, selectedHexId);
+    updateCommandPayloadOrderFields(plannedFromHexId, selectedHexId, activeTroopCount);
     setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
   };
 
   const clearPlannedOrder = () => {
     setPlannedFromHexId(null);
     setPlannedToHexId(null);
-    updateCommandPayloadOrderFields(null, null);
+    updateCommandPayloadOrderFields(null, null, activeTroopCount);
   };
 
   useEffect(() => {
@@ -578,21 +589,30 @@ export function GamePage() {
     if (issued) {
       setPlannedFromHexId(issued.fromHexId);
       setPlannedToHexId(issued.toHexId);
-      updateCommandPayloadOrderFields(issued.fromHexId, issued.toHexId);
+      setActiveTroopCount(issued.troopCount);
+      updateCommandPayloadOrderFields(issued.fromHexId, issued.toHexId, issued.troopCount);
       return;
     }
 
     if (projectedStartFromPreviousOrder !== null) {
       setPlannedFromHexId(projectedStartFromPreviousOrder);
       setPlannedToHexId(null);
-      updateCommandPayloadOrderFields(projectedStartFromPreviousOrder, null);
+      updateCommandPayloadOrderFields(projectedStartFromPreviousOrder, null, activeTroopCount);
       return;
     }
 
     setPlannedFromHexId(null);
     setPlannedToHexId(null);
-    updateCommandPayloadOrderFields(null, null);
+    updateCommandPayloadOrderFields(null, null, activeTroopCount);
   }, [activeOrderNumber, issuedOrdersByNumber, projectedStartFromPreviousOrder]);
+
+  useEffect(() => {
+    updateCommandPayloadOrderFields(plannedFromHexId, plannedToHexId, activeTroopCount);
+  }, [activeTroopCount]);
+
+  useEffect(() => {
+    setActiveTroopCount((current) => Math.max(1, Math.min(current, maxTroopsForPlannedStart)));
+  }, [maxTroopsForPlannedStart]);
 
   const handleBoardHexSelect = (hexId: number) => {
     setSelectedHexId(hexId);
@@ -603,7 +623,7 @@ export function GamePage() {
       if (!legalStartHexIdSet.has(hexId)) return;
       setPlannedFromHexId(hexId);
       setPlannedToHexId(null);
-      updateCommandPayloadOrderFields(hexId, null);
+      updateCommandPayloadOrderFields(hexId, null, activeTroopCount);
       setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
       return;
     }
@@ -615,7 +635,7 @@ export function GamePage() {
 
     if (legalDestinationHexIdSet.has(hexId)) {
       setPlannedToHexId(hexId);
-      updateCommandPayloadOrderFields(plannedFromHexId, hexId);
+      updateCommandPayloadOrderFields(plannedFromHexId, hexId, activeTroopCount);
       setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
       return;
     }
@@ -623,7 +643,7 @@ export function GamePage() {
     if (legalStartHexIdSet.has(hexId)) {
       setPlannedFromHexId(hexId);
       setPlannedToHexId(null);
-      updateCommandPayloadOrderFields(hexId, null);
+      updateCommandPayloadOrderFields(hexId, null, activeTroopCount);
       setCommandType((current) => (current === "order.submit" ? current : "order.submit"));
     }
   };
@@ -787,6 +807,24 @@ export function GamePage() {
                 ? `Projected start from order ${activeOrderNumber - 1}: #${projectedStartFromPreviousOrder}`
                 : "Order 1 starts from your currently owned hexes with units"}
             </span>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="order-troop-count" className="text-xs text-muted-foreground">
+                Troops
+              </Label>
+              <Input
+                id="order-troop-count"
+                type="number"
+                min={1}
+                max={maxTroopsForPlannedStart}
+                value={activeTroopCount}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  if (!Number.isFinite(next)) return;
+                  setActiveTroopCount(Math.max(1, Math.min(Math.floor(next), maxTroopsForPlannedStart)));
+                }}
+                className="h-7 w-24"
+              />
+            </div>
           </div>
 
           <GameBoardCanvas
@@ -841,7 +879,7 @@ export function GamePage() {
                 </Button>
               </div>
               <p className="mt-2 text-muted-foreground">
-                Planned order {activeOrderNumber}: from {plannedFromHexId ?? "-"} to {plannedToHexId ?? "-"}
+                Planned order {activeOrderNumber}: from {plannedFromHexId ?? "-"} to {plannedToHexId ?? "-"} with {activeTroopCount} troops
               </p>
             </div>
           ) : null}
