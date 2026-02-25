@@ -85,6 +85,10 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
   const { currentState, selectedHexId, onSelectHex } = props;
   const layout = useMemo(() => buildBoardLayout({ boardSpec: LEGACY_BOARD, radius: 34, padding: 24 }), []);
   const hexByIndex = useMemo(() => new Map(layout.hexes.map((hex) => [hex.index, hex])), [layout.hexes]);
+  const isPlayableHex = (hexIndex: number): boolean => {
+    const hex = hexByIndex.get(hexIndex);
+    return Boolean(hex && hex.type !== "BLANK");
+  };
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [containerWidth, setContainerWidth] = useState(960);
   const [hoverHexId, setHoverHexId] = useState<number | null>(null);
@@ -114,7 +118,7 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
       ? []
       : (hexByIndex
           .get(activeHexId)
-          ?.neighbors.filter((neighbor): neighbor is number => neighbor !== null) ?? []);
+          ?.neighbors.filter((neighbor): neighbor is number => neighbor !== null && isPlayableHex(neighbor)) ?? []);
   const neighborHexSet = useMemo(() => new Set(neighborHexIds), [neighborHexIds]);
   const canZoomIn = zoomLevel < 2;
   const canZoomOut = zoomLevel > 0.65;
@@ -168,6 +172,7 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
           <Group x={groupX} scaleX={scale} scaleY={scale}>
             {layout.hexes.map((hex) => {
               const style = hexStyle(hex.type);
+              const isPlayable = hex.type !== "BLANK";
               const isNeighbor = neighborHexSet.has(hex.index);
               const isSelected = hex.index === selectedHexId;
               const isActive = hex.index === activeHexId;
@@ -207,6 +212,10 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                 tileOpacity = hex.type === "BLANK" ? 0.42 : 0.5;
               }
 
+              if (!isPlayable) {
+                tileOpacity = hoverHexId === null ? 0.78 : 0.35;
+              }
+
               return (
                 <Line
                   key={hex.index}
@@ -221,9 +230,15 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                   shadowBlur={isActive ? 9 : isSelected ? 8 : isHovered ? style.shadowBlur + 3 : style.shadowBlur}
                   shadowOpacity={isActive ? 0.52 : isSelected ? 0.45 : isHovered ? 0.3 : 0.14}
                   lineJoin="round"
-                  onClick={() => onSelectHex(hex.index)}
-                  onTap={() => onSelectHex(hex.index)}
-                  onMouseEnter={() => setHoverHexId(hex.index)}
+                  onClick={() => {
+                    if (isPlayable) onSelectHex(hex.index);
+                  }}
+                  onTap={() => {
+                    if (isPlayable) onSelectHex(hex.index);
+                  }}
+                  onMouseEnter={() => {
+                    if (isPlayable) setHoverHexId(hex.index);
+                  }}
                   onMouseLeave={() => setHoverHexId((current) => (current === hex.index ? null : current))}
                 />
               );
