@@ -115,7 +115,7 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
       : (hexByIndex
           .get(activeHexId)
           ?.neighbors.filter((neighbor): neighbor is number => neighbor !== null) ?? []);
-  const isHighlighted = (hexId: number): boolean => hexId === selectedHexId || neighborHexIds.includes(hexId);
+  const neighborHexSet = useMemo(() => new Set(neighborHexIds), [neighborHexIds]);
   const canZoomIn = zoomLevel < 2;
   const canZoomOut = zoomLevel > 0.65;
 
@@ -168,22 +168,58 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
           <Group x={groupX} scaleX={scale} scaleY={scale}>
             {layout.hexes.map((hex) => {
               const style = hexStyle(hex.type);
-              const highlighted = isHighlighted(hex.index);
+              const isNeighbor = neighborHexSet.has(hex.index);
               const isSelected = hex.index === selectedHexId;
+              const isActive = hex.index === activeHexId;
               const isHovered = hoverHexId === hex.index;
+
+              let tileFill = style.fill;
+              let tileFillOpacity = style.fillOpacity;
+              let tileStroke = style.stroke;
+              let tileStrokeWidth = 1.4;
+              let tileOpacity = hex.type === "BLANK" ? 0.8 : 1;
+
+              if (isNeighbor) {
+                tileFill = "#bfdbfe";
+                tileFillOpacity = 0.84;
+                tileStroke = "#1d4ed8";
+                tileStrokeWidth = 2.4;
+                tileOpacity = 1;
+              }
+
+              if (isSelected) {
+                tileFill = "#93c5fd";
+                tileFillOpacity = 0.9;
+                tileStroke = "#1e40af";
+                tileStrokeWidth = 3;
+                tileOpacity = 1;
+              }
+
+              if (isActive) {
+                tileFill = "#60a5fa";
+                tileFillOpacity = 0.95;
+                tileStroke = "#1e3a8a";
+                tileStrokeWidth = 3.2;
+                tileOpacity = 1;
+              }
+
+              if (hoverHexId !== null && !isActive && !isNeighbor) {
+                tileOpacity = hex.type === "BLANK" ? 0.42 : 0.5;
+              }
+
               return (
                 <Line
                   key={hex.index}
                   points={hex.points}
                   closed
-                  fill={style.fill}
-                  fillOpacity={style.fillOpacity}
-                  stroke={isSelected ? "#1d4ed8" : highlighted ? "#0f766e" : style.stroke}
-                  strokeWidth={isSelected ? 3 : highlighted ? 2.2 : 1.4}
-                  opacity={hex.type === "BLANK" && !highlighted ? 0.8 : 1}
+                  fill={tileFill}
+                  fillOpacity={tileFillOpacity}
+                  stroke={tileStroke}
+                  strokeWidth={tileStrokeWidth}
+                  opacity={tileOpacity}
                   shadowColor={style.shadowColor}
-                  shadowBlur={isSelected ? 8 : isHovered ? style.shadowBlur + 3 : style.shadowBlur}
-                  shadowOpacity={isSelected ? 0.5 : isHovered ? 0.3 : 0.14}
+                  shadowBlur={isActive ? 9 : isSelected ? 8 : isHovered ? style.shadowBlur + 3 : style.shadowBlur}
+                  shadowOpacity={isActive ? 0.52 : isSelected ? 0.45 : isHovered ? 0.3 : 0.14}
                   lineJoin="round"
                   onClick={() => onSelectHex(hex.index)}
                   onTap={() => onSelectHex(hex.index)}
@@ -200,6 +236,10 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
             {layout.hexes.map((hex) => {
               const style = hexStyle(hex.type);
               const snapshot = getHexSnapshot(currentState, hex.index);
+              const isActive = hex.index === activeHexId;
+              const isNeighbor = neighborHexSet.has(hex.index);
+              const textOpacity = hoverHexId !== null && !isActive && !isNeighbor ? 0.45 : 1;
+              const idFill = isActive || isNeighbor ? "#172554" : style.idFill;
 
               return (
                 <Group key={hex.index}>
@@ -210,8 +250,8 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                     align="center"
                     fontSize={hex.type === "BLANK" ? 11 : 13}
                     fontStyle="600"
-                    fill={style.idFill}
-                    opacity={hex.type === "BLANK" ? 0.78 : 0.95}
+                    fill={idFill}
+                    opacity={(hex.type === "BLANK" ? 0.78 : 0.95) * textOpacity}
                     text={`#${hex.index}`}
                   />
                   {style.label ? (
@@ -222,7 +262,8 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                       align="center"
                       fontSize={13}
                       fontStyle="700"
-                      fill={style.labelFill}
+                      fill={isActive || isNeighbor ? "#1e3a8a" : style.labelFill}
+                      opacity={textOpacity}
                       text={style.label}
                     />
                   ) : null}
@@ -235,6 +276,7 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                       align="center"
                       fontSize={10}
                       fill="#1d4ed8"
+                      opacity={textOpacity}
                       text={shortId(snapshot.ownerUserId)}
                     />
                   ) : null}
@@ -288,6 +330,19 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                   strokeWidth={3}
                   shadowBlur={10}
                   shadowColor="#2563eb"
+                />
+              ))}
+
+            {layout.hexes
+              .filter((hex) => hex.index === activeHexId)
+              .map((hex) => (
+                <Line
+                  key={`active-${hex.index}`}
+                  points={hex.points}
+                  closed
+                  fill="rgba(30, 58, 138, 0.18)"
+                  stroke="#1e3a8a"
+                  strokeWidth={3.2}
                 />
               ))}
           </Group>
