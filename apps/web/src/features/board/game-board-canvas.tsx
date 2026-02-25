@@ -179,6 +179,7 @@ function shortId(value: string): string {
 
 export interface GameBoardCanvasProps {
   currentState: Record<string, unknown>;
+  playbackState?: Record<string, unknown> | null;
   selectedHexId: number;
   plannedFromHexId?: number | null;
   plannedToHexId?: number | null;
@@ -206,6 +207,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
   const {
     currentState,
     selectedHexId,
+    playbackState = null,
     plannedFromHexId = null,
     plannedToHexId = null,
     legalDestinationHexIds,
@@ -263,6 +265,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
   }, []);
 
   const fitScale = Math.min(containerWidth / layout.width, 1);
+  const renderState = playbackState ?? currentState;
   const scale = fitScale * zoomLevel;
   const stageHeight = Math.ceil(layout.height * scale);
   const groupX = Math.floor((containerWidth - layout.width * scale) / 2);
@@ -325,7 +328,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
               let tileStrokeWidth = 1.4;
               let tileOpacity = hex.type === "BLANK" ? 0.8 : 1;
 
-              const ownership = getHexSnapshot(currentState, hex.index);
+              const ownership = getHexSnapshot(renderState, hex.index);
               const ownerColor = ownership?.ownerUserId ? playerColors[ownership.ownerUserId] : undefined;
 
               if (!isPlayable) {
@@ -464,7 +467,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
           <Group x={groupX} scaleX={scale} scaleY={scale}>
             {layout.hexes.map((hex) => {
               const style = hexStyle(hex.type, palette);
-              const snapshot = getHexSnapshot(currentState, hex.index);
+              const snapshot = getHexSnapshot(renderState, hex.index);
               const isActive = hex.index === activeHexId;
               const isNeighbor = neighborHexSet.has(hex.index);
               const isPlannedFrom = plannedFromHexId === hex.index;

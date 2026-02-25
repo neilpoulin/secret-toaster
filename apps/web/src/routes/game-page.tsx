@@ -101,6 +101,9 @@ interface CommandReplayEntry {
   playerUserId: string;
   commandType: string;
   commandPayload: Record<string, unknown>;
+  actionType: string | null;
+  stateBefore: Record<string, unknown> | null;
+  stateAfter: Record<string, unknown> | null;
   createdAt: string;
 }
 
@@ -187,24 +190,47 @@ function cloneProjectedState(input: Map<number, ProjectedHexState>): Map<number,
   return next;
 }
 
-const PLAYER_COLOR_PALETTE = [
-  "#22C55E",
-  "#0EA5E9",
-  "#F97316",
-  "#EAB308",
-  "#A855F7",
-  "#EF4444",
-  "#14B8A6",
-  "#F43F5E",
-  "#6366F1",
-  "#84CC16",
-];
-
 function buildPlayerColorMap(userIds: string[]): Record<string, string> {
   const uniqueSorted = [...new Set(userIds)].sort();
   const map: Record<string, string> = {};
+
+  const toHex = (value: number) => value.toString(16).padStart(2, "0").toUpperCase();
+  const hslToHex = (h: number, s: number, l: number) => {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const hp = h / 60;
+    const x = c * (1 - Math.abs((hp % 2) - 1));
+
+    let r = 0;
+    let g = 0;
+    let b = 0;
+
+    if (hp >= 0 && hp < 1) {
+      r = c;
+      g = x;
+    } else if (hp < 2) {
+      r = x;
+      g = c;
+    } else if (hp < 3) {
+      g = c;
+      b = x;
+    } else if (hp < 4) {
+      g = x;
+      b = c;
+    } else if (hp < 5) {
+      r = x;
+      b = c;
+    } else {
+      r = c;
+      b = x;
+    }
+
+    const m = l - c / 2;
+    return `#${toHex(Math.round((r + m) * 255))}${toHex(Math.round((g + m) * 255))}${toHex(Math.round((b + m) * 255))}`;
+  };
+
   uniqueSorted.forEach((userId, index) => {
-    map[userId] = PLAYER_COLOR_PALETTE[index % PLAYER_COLOR_PALETTE.length];
+    const hue = (index * 137.508) % 360;
+    map[userId] = hslToHex(hue, 0.72, 0.52);
   });
   return map;
 }
@@ -280,6 +306,9 @@ function getCommandReplayEntries(events: GameEventRecord[]): CommandReplayEntry[
       const playerUserId = asText(event.payload.playerUserId);
       const commandType = asText(event.payload.commandType);
       const commandPayload = asRecord(event.payload.payload) ?? {};
+      const actionType = asText(event.payload.actionType);
+      const stateBefore = asRecord(event.payload.stateBefore);
+      const stateAfter = asRecord(event.payload.stateAfter);
 
       if (
         round === null ||
@@ -298,6 +327,9 @@ function getCommandReplayEntries(events: GameEventRecord[]): CommandReplayEntry[
         playerUserId,
         commandType,
         commandPayload,
+        actionType,
+        stateBefore,
+        stateAfter,
         createdAt: event.created_at,
       };
     })
@@ -789,7 +821,7 @@ export function GamePage() {
     .map((entry) => {
       const fromHexId = asNumber(entry.commandPayload.fromHexId);
       const toHexId = asNumber(entry.commandPayload.toHexId);
-      const actionType = asText(entry.commandPayload.actionType) ?? "move";
+      const actionType = entry.actionType ?? asText(entry.commandPayload.actionType) ?? "move";
       const troopCount = asNumber(entry.commandPayload.troopCount);
       if (fromHexId === null || toHexId === null) return null;
 
@@ -803,10 +835,15 @@ export function GamePage() {
         toHexId,
         playerUserId: entry.playerUserId,
         label,
+        stateAfter: entry.stateAfter,
       };
     })
-    .filter((step): step is { fromHexId: number; toHexId: number; playerUserId: string; label: string } => step !== null);
+    .filter(
+      (step): step is { fromHexId: number; toHexId: number; playerUserId: string; label: string; stateAfter: Record<string, unknown> | null } =>
+        step !== null,
+    );
   const activeCutsceneStep = isCutscenePlaying && cutsceneSteps.length > 0 ? cutsceneSteps[cutsceneStepIndex] ?? null : null;
+  const activeCutsceneState = activeCutsceneStep?.stateAfter ?? null;
   const currentState = gameDetailsQuery.data?.game.current_state ?? {};
   const currentUserId = authQuery.data?.id ?? null;
   const currentRound = gameDetailsQuery.data?.game.round ?? 0;
@@ -1184,7 +1221,7 @@ export function GamePage() {
   }
 
   return (
-    <main className="mx-auto max-w-4xl space-y-4 p-4 md:p-8">
+    <main className="h-[calc(100svh-0.5rem)] w-full space-y-3 p-3">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Game Workspace</h1>
@@ -1206,7 +1243,9 @@ export function GamePage() {
         </div>
       </header>
 
-      <Card>
+      <section className="grid gap-3 lg:h-[calc(100svh-5.8rem)] lg:grid-cols-[minmax(0,1fr)_360px]">
+
+      <Card className="lg:col-start-2">
         <CardHeader>
           <CardTitle>Lobby</CardTitle>
           <CardDescription>Metadata, members, and readiness for the active round.</CardDescription>
@@ -1263,7 +1302,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="lg:col-start-1 lg:row-span-2 lg:h-full">
         <CardHeader>
           <CardTitle>Players</CardTitle>
           <CardDescription>Manage your profile and view current players in this game.</CardDescription>
@@ -1315,7 +1354,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="lg:col-start-2">
         <CardHeader>
           <CardTitle>Alliances</CardTitle>
           <CardDescription>Create and join alliances for scoped chat and coordination.</CardDescription>
@@ -1385,7 +1424,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="lg:col-start-2">
         <CardHeader>
           <CardTitle>Chat</CardTitle>
           <CardDescription>Global, alliance, and direct messages for in-game communication.</CardDescription>
@@ -1472,7 +1511,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="lg:col-start-2 lg:min-h-0 lg:overflow-hidden">
         <CardHeader>
           <CardTitle>Game Board</CardTitle>
           <CardDescription className="text-foreground/75">
@@ -1613,6 +1652,7 @@ export function GamePage() {
 
           <GameBoardCanvas
             currentState={currentState}
+            playbackState={activeCutsceneState}
             selectedHexId={selectedHexId}
             plannedFromHexId={plannedFromHexId}
             plannedToHexId={plannedToHexId}
@@ -1683,7 +1723,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="lg:col-start-2">
         <CardHeader>
           <CardTitle>Invite Link</CardTitle>
           <CardDescription>Create and share tokenized invite links.</CardDescription>
@@ -1728,7 +1768,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="lg:col-start-2">
         <CardHeader>
           <CardTitle>Command Submit</CardTitle>
           <CardDescription>Send command payloads to the authoritative apply-command endpoint.</CardDescription>
@@ -1770,7 +1810,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="lg:col-start-1">
         <CardHeader>
           <CardTitle>Game Events</CardTitle>
           <CardDescription>Live feed of game events for this workspace.</CardDescription>
@@ -1791,7 +1831,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="lg:col-start-1">
         <CardHeader>
           <CardTitle>Round Replay Helper</CardTitle>
           <CardDescription>
@@ -1853,6 +1893,7 @@ export function GamePage() {
           ) : null}
         </CardContent>
       </Card>
+      </section>
     </main>
   );
 }
