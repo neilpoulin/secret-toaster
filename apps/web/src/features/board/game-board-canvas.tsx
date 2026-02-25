@@ -245,20 +245,42 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
   const resetZoom = () => setZoomLevel(1);
 
   return (
-    <div ref={wrapperRef} className="w-full rounded-lg border bg-slate-100/80 p-2">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
+    <div ref={wrapperRef} className="w-full rounded-lg border border-border bg-card/80 p-2">
+      <div className="mb-2 flex items-center justify-between gap-2 rounded-md px-3 py-2 [background:var(--board-toolbar-bg)] [color:var(--board-toolbar-fg)]">
+        <p className="text-sm font-medium [color:var(--board-toolbar-muted)]">
           {hoverHexId === null ? "Hover a hex to preview adjacency" : `Hovering #${hoverHexId}`}
         </p>
         <div className="flex items-center gap-1.5 text-xs">
-          <Button type="button" variant="outline" size="icon-xs" onClick={decreaseZoom} disabled={!canZoomOut}>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-xs"
+            onClick={decreaseZoom}
+            disabled={!canZoomOut}
+            className="[background:var(--board-toolbar-control-bg)] [border-color:var(--board-toolbar-control-border)] [color:var(--board-toolbar-control-fg)] hover:brightness-95"
+          >
             -
           </Button>
-          <span className="min-w-14 text-center font-medium">{Math.round(zoomLevel * 100)}%</span>
-          <Button type="button" variant="outline" size="icon-xs" onClick={increaseZoom} disabled={!canZoomIn}>
+          <span className="min-w-14 text-center text-sm font-semibold [color:var(--board-toolbar-fg)]">
+            {Math.round(zoomLevel * 100)}%
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-xs"
+            onClick={increaseZoom}
+            disabled={!canZoomIn}
+            className="[background:var(--board-toolbar-control-bg)] [border-color:var(--board-toolbar-control-border)] [color:var(--board-toolbar-control-fg)] hover:brightness-95"
+          >
             +
           </Button>
-          <Button type="button" variant="outline" size="xs" onClick={resetZoom}>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            onClick={resetZoom}
+            className="[background:var(--board-toolbar-control-bg)] [border-color:var(--board-toolbar-control-border)] [color:var(--board-toolbar-control-fg)] hover:brightness-95"
+          >
             Reset
           </Button>
         </div>

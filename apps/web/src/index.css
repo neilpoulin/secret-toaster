@@ -66,6 +66,12 @@
   --board-badge-troops-text: #f9fafb;
   --board-badge-knights-bg: #0f766e;
   --board-badge-knights-text: #ecfeff;
+  --board-toolbar-bg: #e2e8f0;
+  --board-toolbar-fg: #0f172a;
+  --board-toolbar-muted: #334155;
+  --board-toolbar-control-bg: #ffffff;
+  --board-toolbar-control-fg: #0f172a;
+  --board-toolbar-control-border: #94a3b8;
 }
 
 @theme inline {
@@ -186,4 +192,10 @@
   --board-badge-troops-text: #111827;
   --board-badge-knights-bg: #99f6e4;
   --board-badge-knights-text: #042f2e;
+  --board-toolbar-bg: #0f172a;
+  --board-toolbar-fg: #e2e8f0;
+  --board-toolbar-muted: #cbd5e1;
+  --board-toolbar-control-bg: #1e293b;
+  --board-toolbar-control-fg: #f8fafc;
+  --board-toolbar-control-border: #475569;
 }

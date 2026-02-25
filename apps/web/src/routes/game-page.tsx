@@ -521,7 +521,9 @@ export function GamePage() {
       <Card>
         <CardHeader>
           <CardTitle>Game Board</CardTitle>
-          <CardDescription>Legacy board layout with keeps, castle, and current-state overlays.</CardDescription>
+          <CardDescription className="text-foreground/75">
+            Legacy board layout with keeps, castle, and current-state overlays.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap gap-2 text-xs">
