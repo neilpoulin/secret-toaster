@@ -1,17 +1,73 @@
 import { buildLegacyBoardSpec } from "@secret-toaster/domain";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Circle, Group, Layer, Line, Stage, Text } from "react-konva";
+import { Circle, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 
 import { buildBoardLayout } from "./hex-layout";
 import { getHexSnapshot } from "./state";
 
 const LEGACY_BOARD = buildLegacyBoardSpec();
 
-function hexStyle(type: string): { fill: string; stroke: string; label: string } {
-  if (type === "CASTLE") return { fill: "#fde68a", stroke: "#d97706", label: "C" };
-  if (type === "KEEP") return { fill: "#bae6fd", stroke: "#0284c7", label: "K" };
-  if (type === "LAND") return { fill: "#bbf7d0", stroke: "#10b981", label: "" };
-  return { fill: "#e5e7eb", stroke: "#cbd5e1", label: "" };
+interface HexVisualStyle {
+  fill: string;
+  stroke: string;
+  label: string;
+  idFill: string;
+  labelFill: string;
+  shadowColor: string;
+  shadowBlur: number;
+  fillOpacity: number;
+}
+
+function hexStyle(type: string): HexVisualStyle {
+  if (type === "CASTLE") {
+    return {
+      fill: "#facc15",
+      stroke: "#b45309",
+      label: "C",
+      idFill: "#422006",
+      labelFill: "#422006",
+      shadowColor: "#f59e0b",
+      shadowBlur: 4,
+      fillOpacity: 0.88,
+    };
+  }
+
+  if (type === "KEEP") {
+    return {
+      fill: "#7dd3fc",
+      stroke: "#0369a1",
+      label: "K",
+      idFill: "#082f49",
+      labelFill: "#0c4a6e",
+      shadowColor: "#0ea5e9",
+      shadowBlur: 4,
+      fillOpacity: 0.86,
+    };
+  }
+
+  if (type === "LAND") {
+    return {
+      fill: "#86efac",
+      stroke: "#059669",
+      label: "",
+      idFill: "#022c22",
+      labelFill: "#064e3b",
+      shadowColor: "#10b981",
+      shadowBlur: 3,
+      fillOpacity: 0.82,
+    };
+  }
+
+  return {
+    fill: "#e5e7eb",
+    stroke: "#cbd5e1",
+    label: "",
+    idFill: "#475569",
+    labelFill: "#64748b",
+    shadowColor: "#94a3b8",
+    shadowBlur: 1.5,
+    fillOpacity: 0.72,
+  };
 }
 
 function shortId(value: string): string {
@@ -68,7 +124,7 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
   const resetZoom = () => setZoomLevel(1);
 
   return (
-    <div ref={wrapperRef} className="w-full rounded-lg border bg-muted/20 p-2">
+    <div ref={wrapperRef} className="w-full rounded-lg border bg-slate-100/80 p-2">
       <div className="mb-2 flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           {hoverHexId === null ? "Hover a hex to preview adjacency" : `Hovering #${hoverHexId}`}
@@ -97,21 +153,38 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
         </div>
       </div>
       <Stage width={containerWidth} height={stageHeight}>
+        <Layer listening={false}>
+          <Rect
+            x={0}
+            y={0}
+            width={containerWidth}
+            height={stageHeight}
+            fill="#f8fafc"
+            cornerRadius={8}
+          />
+        </Layer>
+
         <Layer>
           <Group x={groupX} scaleX={scale} scaleY={scale}>
             {layout.hexes.map((hex) => {
               const style = hexStyle(hex.type);
               const highlighted = isHighlighted(hex.index);
               const isSelected = hex.index === selectedHexId;
+              const isHovered = hoverHexId === hex.index;
               return (
                 <Line
                   key={hex.index}
                   points={hex.points}
                   closed
                   fill={style.fill}
-                  stroke={highlighted ? "#0f766e" : style.stroke}
-                  strokeWidth={isSelected ? 2.8 : highlighted ? 2.2 : 1.5}
-                  opacity={hex.type === "BLANK" && !highlighted ? 0.9 : 0.98}
+                  fillOpacity={style.fillOpacity}
+                  stroke={isSelected ? "#1d4ed8" : highlighted ? "#0f766e" : style.stroke}
+                  strokeWidth={isSelected ? 3 : highlighted ? 2.2 : 1.4}
+                  opacity={hex.type === "BLANK" && !highlighted ? 0.8 : 1}
+                  shadowColor={style.shadowColor}
+                  shadowBlur={isSelected ? 8 : isHovered ? style.shadowBlur + 3 : style.shadowBlur}
+                  shadowOpacity={isSelected ? 0.5 : isHovered ? 0.3 : 0.14}
+                  lineJoin="round"
                   onClick={() => onSelectHex(hex.index)}
                   onTap={() => onSelectHex(hex.index)}
                   onMouseEnter={() => setHoverHexId(hex.index)}
@@ -135,9 +208,10 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                     y={hex.cy - 12}
                     width={48}
                     align="center"
-                    fontSize={13}
+                    fontSize={hex.type === "BLANK" ? 11 : 13}
                     fontStyle="600"
-                    fill="#0f172a"
+                    fill={style.idFill}
+                    opacity={hex.type === "BLANK" ? 0.78 : 0.95}
                     text={`#${hex.index}`}
                   />
                   {style.label ? (
@@ -146,8 +220,9 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                       y={hex.cy + 2}
                       width={20}
                       align="center"
-                      fontSize={12}
-                      fill="#0f172a"
+                      fontSize={13}
+                      fontStyle="700"
+                      fill={style.labelFill}
                       text={style.label}
                     />
                   ) : null}
@@ -166,7 +241,7 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
 
                   {snapshot && snapshot.troopCount !== null ? (
                     <Group>
-                      <Circle x={hex.cx} y={hex.cy + 23} radius={11} fill="#111827" opacity={0.9} />
+                      <Circle x={hex.cx} y={hex.cy + 23} radius={11} fill="#111827" opacity={0.86} />
                       <Text
                         x={hex.cx - 16}
                         y={hex.cy + 17}
@@ -208,10 +283,10 @@ export function LegacyBoardCanvas(props: LegacyBoardCanvasProps) {
                   key={hex.index}
                   points={hex.points}
                   closed
-                  fill="rgba(37, 99, 235, 0.08)"
+                  fill="rgba(37, 99, 235, 0.12)"
                   stroke="#2563eb"
                   strokeWidth={3}
-                  shadowBlur={8}
+                  shadowBlur={10}
                   shadowColor="#2563eb"
                 />
               ))}
