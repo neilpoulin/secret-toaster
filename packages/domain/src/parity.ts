@@ -19,6 +19,7 @@ export const LEGACY_BOARD_HEIGHT = 11;
 export const LEGACY_KEEP_IDS = [23, 26, 52, 58, 83, 86] as const;
 export const LEGACY_CASTLE_ID = 55;
 export const LEGACY_LAND_OVERRIDES = [35, 46, 75, 63, 43, 66] as const;
+const LEGACY_LAND_OVERRIDE_SET: ReadonlySet<number> = new Set<number>(LEGACY_LAND_OVERRIDES);
 
 export const LEGACY_FORTIFY_VALUE = 200;
 export const LEGACY_TROOPS_TO_PROMOTE_KNIGHT = 100;
@@ -95,7 +96,7 @@ export function buildLegacyBoardSpec(): LegacyBoardSpec {
       }
     }
 
-    if (LEGACY_LAND_OVERRIDES.includes(hex.index)) {
+    if (LEGACY_LAND_OVERRIDE_SET.has(hex.index)) {
       hex.type = "LAND";
     }
   }

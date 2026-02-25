@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { buildLegacyBoardSpec, legacyBoardX, legacyBoardY, type LegacyHexSpec } from "@secret-toaster/domain";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,7 @@ interface GameDetailsRecord {
   title: string | null;
   status: string;
   round: number;
+   current_state: Record<string, unknown>;
   created_at: string;
 }
 
@@ -66,6 +68,20 @@ interface CommandReplayEntry {
   createdAt: string;
 }
 
+interface HexSnapshot {
+  ownerUserId: string | null;
+  troopCount: number | null;
+  knightCount: number | null;
+}
+
+const LEGACY_BOARD = buildLegacyBoardSpec();
+const LEGACY_BOARD_ROWS = Array.from({ length: LEGACY_BOARD.height }, (_, y) =>
+  LEGACY_BOARD.hexes.slice(y * LEGACY_BOARD.width, (y + 1) * LEGACY_BOARD.width),
+);
+const HEXAGON_SHAPE_STYLE = {
+  clipPath: "polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0% 50%)",
+};
+
 function shortId(value: string): string {
   if (value.length <= 12) return value;
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
@@ -75,12 +91,64 @@ function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function asCount(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.floor(value));
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : null;
+  }
+  return null;
+}
+
 function asText(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function getHexSnapshot(currentState: Record<string, unknown>, hexIndex: number): HexSnapshot | null {
+  const hexKey = String(hexIndex);
+  const directHexMaps = [
+    asRecord(currentState.hexes),
+    asRecord(currentState.cells),
+    asRecord(asRecord(currentState.board)?.hexes),
+  ];
+
+  for (const mapValue of directHexMaps) {
+    if (!mapValue) continue;
+    const hexData = asRecord(mapValue[hexKey]);
+    if (!hexData) continue;
+
+    const ownerUserId =
+      asText(hexData.ownerUserId) ?? asText(hexData.owner_id) ?? asText(hexData.owner) ?? asText(hexData.playerId) ?? null;
+    const troopCount = asCount(hexData.troopCount) ?? asCount(hexData.troops);
+    const knightCount = asCount(hexData.knightCount) ?? asCount(hexData.knights);
+
+    if (ownerUserId || troopCount !== null || knightCount !== null) {
+      return { ownerUserId, troopCount, knightCount };
+    }
+  }
+
+  const ownerMaps = [asRecord(currentState.hexOwners), asRecord(currentState.owners)];
+  const troopMaps = [asRecord(currentState.hexTroops), asRecord(currentState.troopsByHex)];
+  const knightMaps = [asRecord(currentState.hexKnights), asRecord(currentState.knightsByHex)];
+
+  const ownerUserId = ownerMaps.map((map) => (map ? asText(map[hexKey]) : null)).find((value) => value !== null) ?? null;
+  const troopCount = troopMaps.map((map) => (map ? asCount(map[hexKey]) : null)).find((value) => value !== null) ?? null;
+  const knightCount =
+    knightMaps.map((map) => (map ? asCount(map[hexKey]) : null)).find((value) => value !== null) ?? null;
+
+  if (!ownerUserId && troopCount === null && knightCount === null) return null;
+  return { ownerUserId, troopCount, knightCount };
+}
+
+function getHexToneClasses(hex: LegacyHexSpec): string {
+  if (hex.type === "CASTLE") return "bg-amber-200/90 border-amber-600 text-amber-950";
+  if (hex.type === "KEEP") return "bg-sky-200/90 border-sky-600 text-sky-950";
+  if (hex.type === "LAND") return "bg-emerald-100/90 border-emerald-500 text-emerald-950";
+  return "bg-muted/70 border-border text-muted-foreground";
 }
 
 function formatPayloadInline(payload: Record<string, unknown>): string {
@@ -146,6 +214,7 @@ export function GamePage() {
   const [lastCommandAck, setLastCommandAck] = useState<ApplyCommandResponse | null>(null);
   const [gameEvents, setGameEvents] = useState<GameEventRecord[]>([]);
   const [gameEventsError, setGameEventsError] = useState<string | null>(null);
+  const [selectedHexId, setSelectedHexId] = useState<number>(LEGACY_BOARD.castleId);
 
   const authQuery = useQuery({
     queryKey: ["auth", "user"],
@@ -169,7 +238,7 @@ export function GamePage() {
         supabase
           .schema("secret_toaster")
           .from("games")
-          .select("id, game_code, title, status, round, created_at")
+          .select("id, game_code, title, status, round, current_state, created_at")
           .eq("id", activeGame.gameId)
           .single(),
         supabase
@@ -409,6 +478,9 @@ export function GamePage() {
       : commandReplayEntries
           .filter((entry) => entry.round === latestExecutedRound)
           .sort((left, right) => left.executionIndex - right.executionIndex);
+  const currentState = gameDetailsQuery.data?.game.current_state ?? {};
+  const selectedHex = LEGACY_BOARD.hexes[selectedHexId] ?? null;
+  const selectedHexSnapshot = selectedHex ? getHexSnapshot(currentState, selectedHex.index) : null;
 
   const copyInviteLink = async () => {
     if (!inviteLink) return;
@@ -505,6 +577,76 @@ export function GamePage() {
                 ))}
               </ul>
             </>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Game Board</CardTitle>
+          <CardDescription>Legacy board layout with keeps, castle, and current-state overlays.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="rounded border border-emerald-500 bg-emerald-100 px-2 py-1">Land</span>
+            <span className="rounded border border-sky-600 bg-sky-200 px-2 py-1">Keep</span>
+            <span className="rounded border border-amber-600 bg-amber-200 px-2 py-1">Castle</span>
+            <span className="rounded border bg-muted px-2 py-1">Blank</span>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border bg-muted/20 p-3">
+            <div className="inline-flex flex-col gap-1.5 pb-2 pr-3">
+              {LEGACY_BOARD_ROWS.map((row, rowIndex) => (
+                <div
+                  key={rowIndex}
+                  className="flex gap-1.5"
+                  style={{ marginLeft: rowIndex % 2 === 0 ? 0 : 28 }}
+                >
+                  {row.map((hex) => {
+                    const snapshot = getHexSnapshot(currentState, hex.index);
+                    const isSelected = selectedHexId === hex.index;
+                    return (
+                      <button
+                        key={hex.index}
+                        type="button"
+                        onClick={() => setSelectedHexId(hex.index)}
+                        className={`h-16 w-14 cursor-pointer border text-[10px] leading-tight transition hover:brightness-95 ${getHexToneClasses(hex)} ${isSelected ? "ring-2 ring-primary" : ""}`}
+                        style={HEXAGON_SHAPE_STYLE}
+                        title={`Hex ${hex.index} (${legacyBoardX(hex.index)}, ${legacyBoardY(hex.index)})`}
+                      >
+                        <div className="font-semibold">#{hex.index}</div>
+                        <div>{hex.type === "CASTLE" ? "C" : hex.type === "KEEP" ? "K" : ""}</div>
+                        {snapshot && snapshot.troopCount !== null ? <div>T {snapshot.troopCount}</div> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {selectedHex ? (
+            <div className="rounded-md border bg-card p-3 text-sm">
+              <p>
+                Selected hex <strong>#{selectedHex.index}</strong> ({legacyBoardX(selectedHex.index)},{" "}
+                {legacyBoardY(selectedHex.index)}) - {selectedHex.type}
+              </p>
+              <p>
+                Troops: <strong>{selectedHexSnapshot?.troopCount ?? 0}</strong> | Knights:{" "}
+                <strong>{selectedHexSnapshot?.knightCount ?? 0}</strong>
+              </p>
+              <p>
+                Owner: <strong>{selectedHexSnapshot?.ownerUserId ? shortId(selectedHexSnapshot.ownerUserId) : "none"}</strong>
+              </p>
+              <p>
+                Neighbors:{" "}
+                <strong>
+                  {selectedHex.neighbors
+                    .filter((neighbor): neighbor is number => neighbor !== null)
+                    .join(", ") || "none"}
+                </strong>
+              </p>
+            </div>
           ) : null}
         </CardContent>
       </Card>
