@@ -1221,7 +1221,7 @@ export function GamePage() {
   }
 
   return (
-    <main className="h-[calc(100svh-0.5rem)] w-full space-y-3 p-3">
+    <main className="min-h-svh w-full space-y-3 p-3">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Game Workspace</h1>
@@ -1243,7 +1243,7 @@ export function GamePage() {
         </div>
       </header>
 
-      <section className="grid gap-3 lg:h-[calc(100svh-5.8rem)] lg:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
 
       <Card className="lg:col-start-2">
         <CardHeader>
@@ -1302,7 +1302,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card className="lg:col-start-1 lg:row-span-2 lg:h-full">
+      <Card className="lg:col-start-2">
         <CardHeader>
           <CardTitle>Players</CardTitle>
           <CardDescription>Manage your profile and view current players in this game.</CardDescription>
@@ -1511,7 +1511,7 @@ export function GamePage() {
         </CardContent>
       </Card>
 
-      <Card className="lg:col-start-2 lg:min-h-0 lg:overflow-hidden">
+      <Card className="lg:col-start-1 lg:row-start-1 lg:row-span-8 lg:sticky lg:top-3">
         <CardHeader>
           <CardTitle>Game Board</CardTitle>
           <CardDescription className="text-foreground/75">
