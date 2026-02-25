@@ -471,13 +471,22 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
 
                   {hasTroops ? (
                     <Group>
-                      <Circle x={hex.cx} y={hex.cy + 23} radius={11} fill={palette.troopsBadgeBg} opacity={0.86} />
+                      <Circle
+                        x={hex.cx}
+                        y={hex.cy + 23}
+                        radius={11}
+                        fill={palette.troopsBadgeBg}
+                        opacity={0.96}
+                        stroke={palette.stageBg}
+                        strokeWidth={2}
+                      />
                       <Text
                         x={hex.cx - 16}
                         y={hex.cy + 17}
                         width={32}
                         align="center"
                         fontSize={10}
+                        fontStyle="700"
                         fill={palette.troopsBadgeText}
                         text={`T${troopCount}`}
                       />
@@ -486,13 +495,22 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
 
                   {hasKnights ? (
                     <Group>
-                      <Circle x={hasTroops ? hex.cx + 21 : hex.cx} y={hex.cy + 23} radius={9} fill={palette.knightsBadgeBg} opacity={0.95} />
+                      <Circle
+                        x={hasTroops ? hex.cx + 21 : hex.cx}
+                        y={hex.cy + 23}
+                        radius={9}
+                        fill={palette.knightsBadgeBg}
+                        opacity={0.98}
+                        stroke={palette.stageBg}
+                        strokeWidth={2}
+                      />
                       <Text
                         x={hasTroops ? hex.cx + 11 : hex.cx - 10}
                         y={hex.cy + 18}
                         width={20}
                         align="center"
                         fontSize={9}
+                        fontStyle="700"
                         fill={palette.knightsBadgeText}
                         text={`K${knightCount}`}
                       />
@@ -513,7 +531,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
                   key={hex.index}
                   points={hex.points}
                   closed
-                  fill="rgba(37, 99, 235, 0.12)"
+                  fillEnabled={false}
                   stroke={palette.selectedStroke}
                   strokeWidth={3}
                   shadowBlur={10}
@@ -528,7 +546,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
                   key={`active-${hex.index}`}
                   points={hex.points}
                   closed
-                  fill="rgba(30, 58, 138, 0.18)"
+                  fillEnabled={false}
                   stroke={palette.activeStroke}
                   strokeWidth={3.2}
                 />
