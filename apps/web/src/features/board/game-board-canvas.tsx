@@ -1,4 +1,5 @@
 import { buildLegacyBoardSpec } from "@secret-toaster/domain";
+import type { Stage as KonvaStage } from "konva/lib/Stage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, Group, Layer, Line, Rect, Stage, Text } from "react-konva";
 
@@ -234,10 +235,14 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
     return Boolean(hex && hex.type !== "BLANK");
   };
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<KonvaStage | null>(null);
   const [containerWidth, setContainerWidth] = useState(960);
   const [hoverHexId, setHoverHexId] = useState<number | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
   const [palette, setPalette] = useState<BoardPalette>(DEFAULT_PALETTE);
+  const dragRef = useRef<{ active: boolean; x: number; y: number }>({ active: false, x: 0, y: 0 });
 
   useEffect(() => {
     const updatePalette = () => setPalette(readBoardPalette());
@@ -269,8 +274,25 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
   const fitScale = Math.min(containerWidth / layout.width, 1);
   const renderState = playbackState ?? currentState;
   const scale = fitScale * zoomLevel;
-  const stageHeight = Math.ceil(layout.height * scale);
-  const groupX = Math.floor((containerWidth - layout.width * scale) / 2);
+  const stageHeight = Math.ceil(layout.height * fitScale);
+  const contentWidth = layout.width * scale;
+  const contentHeight = layout.height * scale;
+
+  const clampPan = (candidate: { x: number; y: number }): { x: number; y: number } => {
+    if (zoomLevel <= 1) return { x: 0, y: 0 };
+
+    const minX = Math.min(0, stageHeight === 0 ? 0 : containerWidth - contentWidth);
+    const minY = Math.min(0, stageHeight - contentHeight);
+
+    return {
+      x: Math.max(minX, Math.min(0, candidate.x)),
+      y: Math.max(minY, Math.min(0, candidate.y)),
+    };
+  };
+
+  const clampedPan = clampPan(panOffset);
+  const groupX = clampedPan.x;
+  const groupY = clampedPan.y;
   const activeHexId = hoverHexId ?? selectedHexId;
   const neighborHexIds =
     legalDestinationHexIds && legalDestinationHexIds.length > 0
@@ -286,7 +308,38 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
 
   const increaseZoom = () => setZoomLevel((current) => Math.min(2, Number((current + 0.1).toFixed(2))));
   const decreaseZoom = () => setZoomLevel((current) => Math.max(0.65, Number((current - 0.1).toFixed(2))));
-  const resetZoom = () => setZoomLevel(1);
+  const resetZoom = () => {
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  useEffect(() => {
+    setPanOffset((current) => clampPan(current));
+  }, [zoomLevel, containerWidth, stageHeight]);
+
+  const beginPan = () => {
+    if (zoomLevel <= 1 || !stageRef.current) return;
+    const pointer = stageRef.current.getPointerPosition();
+    if (!pointer) return;
+    dragRef.current = { active: true, x: pointer.x, y: pointer.y };
+    setIsPanning(true);
+  };
+
+  const movePan = () => {
+    if (!dragRef.current.active || !stageRef.current) return;
+    const pointer = stageRef.current.getPointerPosition();
+    if (!pointer) return;
+    const dx = pointer.x - dragRef.current.x;
+    const dy = pointer.y - dragRef.current.y;
+    dragRef.current = { active: true, x: pointer.x, y: pointer.y };
+
+    setPanOffset((current) => clampPan({ x: current.x + dx, y: current.y + dy }));
+  };
+
+  const endPan = () => {
+    dragRef.current.active = false;
+    setIsPanning(false);
+  };
   const ownerLabelForUser = (userId: string): string => {
     const displayName = playerDisplayNames[userId]?.trim();
     if (displayName && displayName.length > 0) {
@@ -316,13 +369,25 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
           </Button>
         </div>
       </div>
-      <Stage width={containerWidth} height={stageHeight}>
+      <Stage
+        ref={stageRef}
+        width={containerWidth}
+        height={stageHeight}
+        onMouseDown={beginPan}
+        onMouseMove={movePan}
+        onMouseUp={endPan}
+        onMouseLeave={endPan}
+        onTouchStart={beginPan}
+        onTouchMove={movePan}
+        onTouchEnd={endPan}
+        style={{ cursor: zoomLevel > 1 ? (isPanning ? "grabbing" : "grab") : "default" }}
+      >
         <Layer listening={false}>
           <Rect x={0} y={0} width={containerWidth} height={stageHeight} fill={palette.stageBg} />
         </Layer>
 
         <Layer>
-          <Group x={groupX} scaleX={scale} scaleY={scale}>
+          <Group x={groupX} y={groupY} scaleX={scale} scaleY={scale}>
             {baseHexes.map((hex) => {
               const style = hexStyle(hex.type, palette);
               const isPlayable = hex.type !== "BLANK";
@@ -426,7 +491,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
         </Layer>
 
         <Layer listening={false}>
-          <Group x={groupX} scaleX={scale} scaleY={scale}>
+          <Group x={groupX} y={groupY} scaleX={scale} scaleY={scale}>
             {layout.hexes
               .filter((hex) => hex.index === selectedHexId)
               .map((hex) => (
@@ -475,7 +540,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
         </Layer>
 
         <Layer listening={false}>
-          <Group x={groupX} scaleX={scale} scaleY={scale}>
+          <Group x={groupX} y={groupY} scaleX={scale} scaleY={scale}>
             {layout.hexes.map((hex) => {
               const style = hexStyle(hex.type, palette);
               const snapshot = getHexSnapshot(renderState, hex.index);
