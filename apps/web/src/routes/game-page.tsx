@@ -889,6 +889,13 @@ export function GamePage() {
   const currentUserId = authQuery.data?.id ?? null;
   const currentRound = gameDetailsQuery.data?.game.round ?? 0;
   const profileByUserId = new Map((gameDetailsQuery.data?.profiles ?? []).map((profile) => [profile.user_id, profile]));
+  const playerDisplayNames: Record<string, string> = {};
+  for (const profile of gameDetailsQuery.data?.profiles ?? []) {
+    const displayName = profile.display_name?.trim();
+    if (displayName) {
+      playerDisplayNames[profile.user_id] = displayName;
+    }
+  }
   const currentUserProfile = currentUserId ? profileByUserId.get(currentUserId) ?? null : null;
   const alliances = gameDetailsQuery.data?.alliances ?? [];
   const playerAlliances = gameDetailsQuery.data?.playerAlliances ?? [];
@@ -1735,6 +1742,7 @@ export function GamePage() {
             plannedToHexId={plannedToHexId}
             legalDestinationHexIds={plannedFromHexId === null ? undefined : legalDestinationHexIds}
             playerColors={playerColors}
+            playerDisplayNames={playerDisplayNames}
             playbackStep={activeCutsceneStep}
             onSelectHex={isCutscenePlaying ? () => {} : handleBoardHexSelect}
           />

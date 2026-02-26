@@ -185,6 +185,7 @@ export interface GameBoardCanvasProps {
   plannedToHexId?: number | null;
   legalDestinationHexIds?: number[];
   playerColors?: Record<string, string>;
+  playerDisplayNames?: Record<string, string>;
   playbackStep?: {
     fromHexId: number;
     toHexId: number;
@@ -212,6 +213,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
     plannedToHexId = null,
     legalDestinationHexIds,
     playerColors = {},
+    playerDisplayNames = {},
     playbackStep = null,
     onSelectHex,
   } = props;
@@ -285,6 +287,15 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
   const increaseZoom = () => setZoomLevel((current) => Math.min(2, Number((current + 0.1).toFixed(2))));
   const decreaseZoom = () => setZoomLevel((current) => Math.max(0.65, Number((current - 0.1).toFixed(2))));
   const resetZoom = () => setZoomLevel(1);
+  const ownerLabelForUser = (userId: string): string => {
+    const displayName = playerDisplayNames[userId]?.trim();
+    if (displayName && displayName.length > 0) {
+      const maxLength = 14;
+      return displayName.length <= maxLength ? displayName : `${displayName.slice(0, maxLength)}...`;
+    }
+
+    return shortId(userId);
+  };
 
   return (
     <div ref={wrapperRef} className="w-full overflow-hidden rounded-lg border border-border bg-card/80">
@@ -567,7 +578,7 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
                         fontStyle="600"
                         fill={ownerColor}
                         opacity={textOpacity}
-                        text={shortId(snapshot.ownerUserId)}
+                        text={ownerLabelForUser(snapshot.ownerUserId)}
                       />
                           </>
                         );
