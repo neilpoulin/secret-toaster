@@ -561,19 +561,21 @@ export function GameBoardCanvas(props: GameBoardCanvasProps) {
                         return (
                           <>
                       <Rect
-                        x={hex.cx - 31}
+                        x={hex.cx - 36}
                         y={ownerLabelY - 2}
-                        width={62}
+                        width={72}
                         height={13}
                         cornerRadius={6}
                         fill={palette.stageBg}
                         opacity={0.92 * textOpacity}
                       />
                       <Text
-                        x={hex.cx - 30}
+                        x={hex.cx - 35}
                         y={ownerLabelY}
-                        width={60}
+                        width={70}
                         align="center"
+                        wrap="none"
+                        ellipsis
                         fontSize={9}
                         fontStyle="600"
                         fill={ownerColor}
