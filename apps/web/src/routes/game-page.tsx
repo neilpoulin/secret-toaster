@@ -7,6 +7,7 @@ import { legacyBoardX, legacyBoardY } from "@secret-toaster/domain";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { LEGACY_BOARD, GameBoardCanvas } from "@/features/board/game-board-canvas";
 import { getHexSnapshot } from "@/features/board/state";
 import { Input } from "@/components/ui/input";
@@ -1276,6 +1277,7 @@ export function GamePage() {
           <p className="text-muted-foreground">Game {activeGame.gameCode ?? shortId(activeGame.gameId)}</p>
         </div>
         <div className="flex gap-2">
+          <ThemeToggle />
           <Button variant="secondary" asChild>
             <Link to="/">Back to Home</Link>
           </Button>
